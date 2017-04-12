@@ -139,6 +139,7 @@ function client:send(id, pb)
 	local data = pb:SerializeToString()
 	buff:writeInt(#data)
 	buff:write(data)
+	log.trace("[CLIENT] Packet %d sent", id)
 	return self.socket:send(buff:getRaw())
 end
 
@@ -148,7 +149,6 @@ function client:doping()
 	ping.tcp_packets = self.ping.tcp_packets
 	ping.tcp_ping_avg = self.ping.tcp_ping_avg
 	self:send(id, ping)
-	log.trace("[CLIENT] Ping")
 end
 
 local next_ping = socket.gettime() + 5
@@ -161,41 +161,54 @@ function client:update()
 		self:doping()
 	end
 
-	local read, err = self.socket:receive(6)
+	local read = true
+	local err
 
-	if read then
-		local buff = buffer(read)
+	while read do
+		read, err = self.socket:receive(6)
 
-		local id = buff:readShort()
-		local type = getName(id)
-		local len = buff:readInt()
+		if read then
+			local buff = buffer(read)
 
-		local data, err = self.socket:receive(len)
+			local id = buff:readShort()
+			local type = getName(id)
+			local len = buff:readInt()
 
-		if type == "UDPTunnel" then
-			self:onPacket(id, type, data)
-		else
-			local proto = proto[type]()
-			proto:ParseFromString(data)
-			self:onPacket(id, type, proto)
+			read, err = self.socket:receive(len)
+
+			if type == "UDPTunnel" then
+				self:onPacket(id, type, read)
+			else
+				local proto = proto[type]()
+				proto:ParseFromString(read)
+				self:onPacket(id, type, proto)
+			end
+		elseif err ~= "wantread" and err ~= "timeout" then
+			log.error("[SERVER] receive error %q", err)
+			return false
 		end
 	end
 
 	return true
 end
 
+function client:sleep(t)
+	socket.sleep(t)
+end
+
 function client:onPacket(id, type, proto)
 	local func = self["on" .. type]
 	if not func then
-		log.warn("[SERVER] Unimplemented packet:", type, id)
+		log.warn("[SERVER] Unimplemented packet [%s][%d]", type, id)
 		return
 	end
+	log.trace("[SERVER] Packet received %s[%d]", type, id)
 	func(self, proto)
 end
 
 function client:onVersion(proto)
-	log.info("[SERVER] Version:", proto.release)
-	log.info("[SERVER] System :", proto.os_version)
+	log.info("[SERVER] Version: %s", proto.release)
+	log.info("[SERVER] System : %s", proto.os_version)
 end
 
 function client:onUDPTunnel(data)
@@ -211,12 +224,12 @@ function client:onPing(proto)
 	local ms = (time - proto.timestamp) / 10
 	self.ping.tcp_packets = self.ping.tcp_packets + 1
 	self.ping.tcp_ping_avg = ms
-	log.trace("[SERVER] Ping")
+	log.trace("[SERVER] Ping: %0.2f", ms)
 	self:hookCall("OnPing")
 end
 
 function client:onReject(proto)
-	log.warn("[SERVER]", proto.type.name .. ":", proto.reason)
+	log.warn("[SERVER] Reject [%s][%s]", proto.type.name, proto.reason)
 	self:hookCall("OnReject")
 end
 
@@ -227,18 +240,18 @@ function client:onServerSync(proto)
 	self.session = proto.session
 	self.max_bandwith = proto.max_bandwith
 	self.me = self.users[self.session]
-	log.info("[SERVER] Welcome Message: %s" proto.welcome_text:StripHTML())
+	log.info("[SERVER] Welcome Message: %s", proto.welcome_text:StripHTML())
 	self:hookCall("OnServerSync")
 end
 
 function client:onChannelRemove(proto)
-	log.debug("[SERVER] ChannelRemove")
+	log.trace("[SERVER] ChannelRemove")
 	self:hookCall("OnChannelRemove")
 	self.channels[proto.channel_id] = nil
 end
 
 function client:onChannelState(proto)
-	log.debug("[SERVER] ChannelState")
+	log.trace("[SERVER] ChannelState")
 	if not self.channels[proto.channel_id] then
 		self.channels[proto.channel_id] = user.new(self, proto)
 		if self.synced then
@@ -251,18 +264,36 @@ function client:onChannelState(proto)
 end
 
 function client:onUserRemove(proto)
-	log.debug("[SERVER] UserRemove")
-	self:hookCall("OnUserRemove")
+	local user = self.users[proto.session]
+	local actor = proto.actor and self.users[proto.actor] or nil
+
+	log.trace("[SERVER] UserRemove %s", user)
+	self:hookCall("OnUserRemove", user)
+
+	local dc = "disconnected"
+	local reason = proto.reason or "Disconnected by user"
+	
+	if actor then
+		dc = (proto.ban and "banned by %s" or "kicked by %s"):format(actor)
+		reason = proto.reason or "No reason given"
+	end
+
+	log.info("[SERVER] %s %s: %s", user, dc, reason)
+	self:hookCall("OnUserDisconnected", user)
+
 	self.users[proto.session] = nil
 end
 
 function client:onUserState(proto)
-	log.debug("[SERVER] UserState")
+	log.trace("[SERVER] UserState")
 	if not self.users[proto.session] then
-		self.users[proto.session] = user.new(self, proto)
+		local user = user.new(self, proto)
 		if self.synced then
+			log.info("[SERVER] %s[%i] connected", user.name, user.session)
 			self:hookCall("OnUserConnected", self.users[proto.session])
 		end
+		user:requestStats()
+		self.users[proto.session] = user
 	else
 		self.users[proto.session]:updateFromProto(proto)
 	end
@@ -270,57 +301,57 @@ function client:onUserState(proto)
 end
 
 function client:onBanList(proto)
-	log.debug("[SERVER] BanList")
+	log.trace("[SERVER] BanList")
 	self:hookCall("OnBanList")
 end
 
 function client:onTextMessage(proto)
-	log.debug("[SERVER] TextMessage")
+	log.trace("[SERVER] TextMessage")
 	self:hookCall("OnTextMessage")
 end
 
 function client:onPermissionDenied(proto)
-	log.debug("[SERVER] PermissionDenied")
+	log.trace("[SERVER] PermissionDenied")
 	self:hookCall("OnPermissionDenied")
 end
 
 function client:onACL(proto)
-	log.debug("[SERVER] ACL")
+	log.trace("[SERVER] ACL")
 	self:hookCall("OnACL")
 end
 
 function client:onQueryUsers(proto)
-	log.debug("[SERVER] QueryUsers")
+	log.trace("[SERVER] QueryUsers")
 	self:hookCall("OnQueryUsers")
 end
 
 function client:onCryptSetup(proto)
-	log.debug("[SERVER] CryptSetup")
+	log.trace("[SERVER] CryptSetup")
 	self:hookCall("OnCryptSetup")
 end
 
 function client:onContextActionModify(proto)
-	log.debug("[SERVER] ContextActionModify")
+	log.trace("[SERVER] ContextActionModify")
 	self:hookCall("OnContextActionModify")
 end
 
 function client:onContextAction(proto)
-	log.debug("[SERVER] ContextAction")
+	log.trace("[SERVER] ContextAction")
 	self:hookCall("OnContextAction")
 end
 
 function client:onUserList(proto)
-	log.debug("[SERVER] UserList")
+	log.trace("[SERVER] UserList")
 	self:hookCall("OnUserList")
 end
 
 function client:onVoiceTarget(proto)
-	log.debug("[SERVER] VoiceTarget")
+	log.trace("[SERVER] VoiceTarget")
 	self:hookCall("OnVoiceTarget")
 end
 
 function client:onPermissionQuery(proto)
-	log.debug("[SERVER] PermissionQuery")
+	log.trace("[SERVER] PermissionQuery")
 	if proto.flush then
 		self.permissions = {}
 	end
@@ -329,22 +360,23 @@ function client:onPermissionQuery(proto)
 end
 
 function client:onCodecVersion(proto)
-	log.debug("[SERVER] CodecVersion")
+	log.trace("[SERVER] CodecVersion")
 	self:hookCall("OnCodecVersion")
 end
 
 function client:onUserStats(proto)
-	log.debug("[SERVER] UserStats")
+	log.trace("[SERVER] UserStats")
+	local user = self.users[proto.session]
 	self:hookCall("OnUserStats")
 end
 
 function client:onRequestBlob(proto)
-	log.debug("[SERVER] RequestBlob")
+	log.trace("[SERVER] RequestBlob")
 	self:hookCall("OnRequestBlob")
 end
 
 function client:onServerConfig(proto)
-	log.debug("[SERVER] ServerConfig")
+	log.trace("[SERVER] ServerConfig")
 	self.config.allow_html = proto.allow_html
 	self.config.message_length = proto.message_length
 	self.config.image_message_length = proto.image_message_length
@@ -352,7 +384,7 @@ function client:onServerConfig(proto)
 end
 
 function client:onSuggestConfig(proto)
-	log.debug("[SERVER] SuggestConfig")
+	log.trace("[SERVER] SuggestConfig")
 	self:hookCall("OnSuggestConfig")
 end
 
