@@ -289,7 +289,7 @@ local function _DefaultValueConstructorForField(field)
     end
   end
   return function (message)
-    return field.default_value
+    return field.has_default_value and field.default_value or nil
   end
 end
 
@@ -377,7 +377,7 @@ local function _AddPropertiesForNonRepeatedScalarField(field, message)
     if value ~= nil then
       return self._fields[field]
     else
-      return default_value
+      return field.has_default_value and default_value or nil
     end
   end
 
@@ -416,7 +416,7 @@ local _ED_meta = {
       value = extension_handle.message_type._concrete_class()
       value:_SetListener(_extended_message._listener_for_children)
     else
-      return extension_handle.default_value
+      return extension_handle.has_default_value and extension_handle.default_value or nil
     end
     _extended_message._fields[extension_handle] = value
     return value

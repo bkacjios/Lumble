@@ -7,7 +7,7 @@
 -- under the terms of the MIT license. See LICENSE for details.
 --
 
-log = { _version = "0.1.0" }
+local log = { _version = "0.1.0" }
 
 log.usecolor = true
 log.outfile = nil
@@ -53,14 +53,14 @@ end
 
 for i, x in ipairs(modes) do
 	local nameupper = x.name:upper()
-	log[x.name] = function(...)
+	log[x.name] = function(msg, ...)
 		
 		-- Return early if we're below the log level
 		if i < levels[log.level] then
 			return
 		end
 
-		local msg = tostring(...)
+		msg = string.format(msg, ...)
 
 		-- Output to console
 		print(string.format("%s[%-6s%s]%s %s",
@@ -73,8 +73,7 @@ for i, x in ipairs(modes) do
 		-- Output to log file
 		if log.outfile then
 			local fp = io.open(log.outfile, "a")
-			local str = string.format("[%-6s%s] %s\n",
-																nameupper, os.date(), msg)
+			local str = string.format("[%-6s%s] %s\n", nameupper, os.date(), msg)
 			fp:write(str)
 			fp:close()
 		end
