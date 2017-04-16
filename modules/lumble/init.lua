@@ -14,13 +14,14 @@ function mumble.connect(host, port, pem, key)
 	return client.new(host, port, params)
 end
 
-function mumble.host(host, port, pem, key)
+function mumble.host(host, port)
 	local params = {
 		mode = "server",
 		protocol = "any",
-		key = key,
-		certificate = pem,
-		verify = {"peer"},
+		key = "config/serverAkey.pem",
+		certificate = "config/serverA.pem",
+		cafile = "config/rootA.pem",
+		verify = {"none"},
 		options = "all",
 	}
 	return server.new(host, port, params)

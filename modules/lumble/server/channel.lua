@@ -1,21 +1,18 @@
 local channel = {}
 channel.__index = channel
 
-require("extensions.table")
+local proto = require("lumble.proto")
 
-function channel.new(client, proto)
+function channel.new(server, name)
 	return setmetatable({
-		client				= client,
-		channel_id			= proto.channel_id,
-		parent				= proto.parent,
-		name				= proto.name,
-		links				= proto.links,
-		description			= proto.description,
-		temporary			= proto.temporary,
-		position			= proto.position,
-		description_hash	= proto.description_hash,
-		max_users			= proto.max_users,
+		proto	= proto.ChannelState(),
+		server	= server,
+		name	= name,
 	}, channel)
+end
+
+function channel:getState()
+	return self.proto
 end
 
 function channel:__tostring()
@@ -24,24 +21,6 @@ end
 
 function channel:__call(path)
 	return self:get(path)
-end
-
-function channel:update(proto, key)
-	if proto[key] ~= nil and proto[key] ~= self[key] then
-		self[key] = proto[key]
-	end
-end
-
-function channel:updateFromProto(proto)
-	self:update(proto, "channel_id")
-	self:update(proto, "parent")
-	self:update(proto, "name")
-	self:update(proto, "links")
-	self:update(proto, "description")
-	self:update(proto, "temporary")
-	self:update(proto, "position")
-	self:update(proto, "description_hash")
-	self:update(proto, "max_users")
 end
 
 function channel:get(path)
