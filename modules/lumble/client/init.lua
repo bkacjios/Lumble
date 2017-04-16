@@ -2,7 +2,7 @@ local client = {}
 client.__index = client
 
 local proto = require("lumble.proto")
-local user = require("lumble.user")
+local user = require("lumble.client.user")
 
 local buffer = require("buffer")
 local socket = require("socket")
@@ -289,7 +289,7 @@ function client:onUserState(proto)
 	if not self.users[proto.session] then
 		local user = user.new(self, proto)
 		if self.synced then
-			log.info("[SERVER] %s[%i] connected", user.name, user.session)
+			log.info("[SERVER] %s connected", user)
 			self:hookCall("OnUserConnected", self.users[proto.session])
 		end
 		user:requestStats()
