@@ -21,7 +21,6 @@ function user.new(server, socket, session)
 	user:set("channel_id", 0)
 	user:set("mute", false)
 	user:set("deaf", false)
-
 	return user
 end
 
@@ -93,7 +92,7 @@ function user:onVersion(packet)
 end
 
 function user:onUserState(packet)
-	self:send(packet)
+	self.server:checkUserState(packet)
 end
 
 function user:onPing(packet)

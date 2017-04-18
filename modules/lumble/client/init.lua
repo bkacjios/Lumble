@@ -1,8 +1,12 @@
 local client = {}
 client.__index = client
 
-local proto = require("lumble.proto")
+local channel = require("lumble.client.channel")
 local user = require("lumble.client.user")
+
+local permission = require("lumble.permission")
+local packet = require("lumble.packet")
+local proto = require("lumble.proto")
 
 local buffer = require("buffer")
 local socket = require("socket")
@@ -10,9 +14,10 @@ local ssl = require("ssl")
 local bit = require("bit")
 local log = require("log")
 
-require("extensions.string")
+log.level = "trace"
 
-log.level = "debug"
+require("extensions.string")
+require("extensions.table")
 
 function client.new(host, port, params)
 	local conn = socket.tcp()
@@ -20,7 +25,6 @@ function client.new(host, port, params)
 	assert(conn:connect(host, port))
 	conn = assert(ssl.wrap(conn, params))
 	assert(conn:dohandshake())
-
 	conn:settimeout(0)
 
 	return setmetatable({
@@ -47,15 +51,8 @@ function client.new(host, port, params)
 		synced = false,
 		config = {},
 		hooks = {},
+		start = socket.gettime(),
 	}, client)
-end
-
-local function getID(name)
-	return proto.MESSAGE_IDS[name]
-end
-
-local function getName(id)
-	return proto.MESSAGE_TYPES[id + 1]
 end
 
 local function argerr(arg, num, expected)
@@ -86,69 +83,67 @@ function client:hook(name, desc, callback)
 	self.hooks[name][desc] = callback
 end
 
+local function onError(err)
+	print(debug.traceback(err, 4))
+end
+
 function client:hookCall(name, ...)
 	if not self.hooks[name] then return end
 	for desc, callback in pairs(self.hooks[name]) do
-		local succ, ret = pcall(callback, ...)
+		local succ, ret = xpcall(callback, onError, ...)
 		if not succ then
-			log.error("hook error: %s (%s)", desc, ret)
+			log.error("%s error: %s", name, desc)
 		else
 			return ret
 		end
 	end
 end
 
-function client:packet(name)
-	local packet = proto[name]()
-	return getID(name), packet
-end
-
 function client:auth(username, password, tokens)
-	local id, version = self:packet("Version")
+	local version = packet.new("Version")
 
 	local low, med, high = string.match(string.format("%06d", jit.version_num), "(%d%d)(%d%d)(%d%d)")
 
-	version.version = bit.lshift(tonumber(low), 16) + bit.lshift(tonumber(med), 8) + tonumber(high)
-	version.release = _VERSION
+	version:set("version", bit.lshift(tonumber(low), 16) + bit.lshift(tonumber(med), 8) + tonumber(high))
+	version:set("release", _VERSION)
 
 	local file = assert(io.popen('uname -s', 'r'))
-	version.os = file:read('*line')
+	version:set("os", file:read('*line'))
 	file:close()
 
 	local file = assert(io.popen('uname -r', 'r'))
-	version.os_version = file:read('*line')
+	version:set("os_version", file:read('*line'))
 	file:close()
 
-	self:send(id, version)
+	self:send(version)
 
-	local id, auth = self:packet("Authenticate")
-	auth.opus = true
-	auth.username = username
-	auth.password = password or ""
+	local auth = packet.new("Authenticate")
+	auth:set("opus", true)
+	auth:set("username", username)
+	auth:set("password", password or "")
 
 	for k,v in pairs(tokens or {}) do
-		table.insert(auth.tokens, v)
+		auth:add("tokens", v)
 	end
 
-	self:send(id, auth)
+	self:send(auth)
 end
 
-function client:send(id, pb)
-	local buff = buffer()
-	buff:writeShort(id)
-	local data = pb:SerializeToString()
-	buff:writeInt(#data)
-	buff:write(data)
-	log.trace("[CLIENT] Packet %d sent", id)
-	return self.socket:send(buff:getRaw())
+function client:send(packet)
+	log.trace("Send %s to server", packet)
+	return self.socket:send(packet:getRaw())
+end
+
+function client:getTime()
+	return socket.gettime() - self.start
 end
 
 function client:doping()
-	local id, ping = self:packet("Ping")
-	ping.timestamp = (socket.gettime() % 5) * 10000
-	ping.tcp_packets = self.ping.tcp_packets
-	ping.tcp_ping_avg = self.ping.tcp_ping_avg
-	self:send(id, ping)
+	local ping = packet.new("Ping")
+	ping:set("timestamp", self:getTime() * 1000)
+	ping:set("tcp_packets", self.ping.tcp_packets)
+	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
+	self:send(ping)
 end
 
 local next_ping = socket.gettime() + 5
@@ -171,20 +166,18 @@ function client:update()
 			local buff = buffer(read)
 
 			local id = buff:readShort()
-			local type = getName(id)
 			local len = buff:readInt()
 
 			read, err = self.socket:receive(len)
 
-			if type == "UDPTunnel" then
-				self:onPacket(id, type, read)
+			if id == 1 then
+				-- Ignore voice data for now..
 			else
-				local proto = proto[type]()
-				proto:ParseFromString(read)
-				self:onPacket(id, type, proto)
+				local packet = packet.new(id, read)
+				self:onPacket(packet)
 			end
 		elseif err ~= "wantread" and err ~= "timeout" then
-			log.error("[SERVER] receive error %q", err)
+			log.error("receive error %q", err)
 			return false
 		end
 	end
@@ -196,195 +189,182 @@ function client:sleep(t)
 	socket.sleep(t)
 end
 
-function client:onPacket(id, type, proto)
-	local func = self["on" .. type]
+function client:onPacket(packet)
+	local name = packet:getType()
+	local func = self["on" .. name]
+
 	if not func then
-		log.warn("[SERVER] Unimplemented packet [%s][%d]", type, id)
+		log.warn("Unimplemented %s", packet)
 		return
 	end
-	log.trace("[SERVER] Packet received %s[%d]", type, id)
-	func(self, proto)
+
+	log.trace("Received %s", packet)
+	func(self, packet)
 end
 
-function client:onVersion(proto)
-	log.info("[SERVER] Version: %s", proto.release)
-	log.info("[SERVER] System : %s", proto.os_version)
+function client:onVersion(packet)
+	log.info("Version: %s", packet.release)
+	log.info("System : %s", packet.os_version)
 end
 
 function client:onUDPTunnel(data)
 	-- Voice data
 end
 
-function client:onAuthenticate(proto)
+function client:onAuthenticate(packet)
 	-- Not ever sent to client?
 end
 
-function client:onPing(proto)
-	local time = (socket.gettime() % 5) * 10000
-	local ms = (time - proto.timestamp) / 10
+function client:onPing(packet)
+	local time = self:getTime() * 1000
+	local ms = (time - packet.timestamp)
 	self.ping.tcp_packets = self.ping.tcp_packets + 1
 	self.ping.tcp_ping_avg = ms
-	log.trace("[SERVER] Ping: %0.2f", ms)
+	log.trace("Ping: %0.2f", ms)
 	self:hookCall("OnPing")
 end
 
-function client:onReject(proto)
-	log.warn("[SERVER] Reject [%s][%s]", proto.type.name, proto.reason)
+function client:onReject(packet)
+	log.warn("Reject [%s][%s]", packet.type.name, packet.reason)
 	self:hookCall("OnReject")
 end
 
-function client:onServerSync(proto)
-	log.info("[SERVER] ServerSync")
+function client:onServerSync(packet)
 	self.synced = true
-	self.permissions[0] = proto.permissions
-	self.session = proto.session
-	self.max_bandwith = proto.max_bandwith
+	self.permissions[0] = packet.permissions
+	self.session = packet.session
+	self.max_bandwith = packet.max_bandwith
 	self.me = self.users[self.session]
-	log.info("[SERVER] Welcome Message: %s", proto.welcome_text:StripHTML())
-	self:hookCall("OnServerSync")
+	log.info("Welcome Message: %s", packet.welcome_text:StripHTML())
+	self:hookCall("OnServerSync", self.me)
 end
 
-function client:onChannelRemove(proto)
-	log.trace("[SERVER] ChannelRemove")
-	self:hookCall("OnChannelRemove")
-	self.channels[proto.channel_id] = nil
+function client:onChannelRemove(packet)
+	self:hookCall("OnChannelRemove", self.channels[packet.channel_id])
+	self.channels[packet.channel_id] = nil
 end
 
-function client:onChannelState(proto)
-	log.trace("[SERVER] ChannelState")
-	if not self.channels[proto.channel_id] then
-		self.channels[proto.channel_id] = user.new(self, proto)
+function client:onChannelState(packet)
+	if not self.channels[packet.channel_id] then
+		self.channels[packet.channel_id] = channel.new(self, packet)
 		if self.synced then
-			self:hookCall("OnChannelCreated", self.channels[proto.channel_id])
+			self:hookCall("OnChannelCreated", self.channels[packet.channel_id])
 		end
 	else
-		self.channels[proto.channel_id]:updateFromProto(proto)
+		self.channels[packet.channel_id]:updateAll(packet)
 	end
-	self:hookCall("OnChannelState")
+	self:hookCall("OnChannelState", self.channels[packet.channel_id])
 end
 
-function client:onUserRemove(proto)
-	local user = self.users[proto.session]
-	local actor = proto.actor and self.users[proto.actor] or nil
+function client:onUserRemove(packet)
+	local user = self.users[packet.session]
+	local actor = packet.actor and self.users[packet.actor] or nil
 
-	log.trace("[SERVER] UserRemove %s", user)
 	self:hookCall("OnUserRemove", user)
 
-	local dc = "disconnected"
-	local reason = proto.reason or "Disconnected by user"
+	local message = "disconnected"
 	
 	if actor then
-		dc = (proto.ban and "banned by %s" or "kicked by %s"):format(actor)
-		reason = proto.reason or "No reason given"
+		local reason = (packet.reason and packet.reason ~= "") and packet.reason or "No reason given"
+		message = (packet.ban and "banned by %s (%q)" or "kicked by %s (%q)"):format(actor, reason)
 	end
 
-	log.info("[SERVER] %s %s: %s", user, dc, reason)
+	log.info("%s %s", user, message)
 	self:hookCall("OnUserDisconnected", user)
 
-	self.users[proto.session] = nil
+	self.users[packet.session] = nil
 end
 
-function client:onUserState(proto)
-	log.trace("[SERVER] UserState")
-	if not self.users[proto.session] then
-		local user = user.new(self, proto)
+function client:onUserState(packet)
+	if not self.users[packet.session] then
+		local user = user.new(self, packet)
 		if self.synced then
-			log.info("[SERVER] %s connected", user)
-			self:hookCall("OnUserConnected", self.users[proto.session])
+			log.info("%s connected", user)
+			self:hookCall("OnUserConnected", self.users[packet.session])
 		end
 		user:requestStats()
-		self.users[proto.session] = user
+		self.users[packet.session] = user
 	else
-		self.users[proto.session]:updateFromProto(proto)
+		self.users[packet.session]:updateAll(packet)
 	end
-	self:hookCall("OnUserState")
+	self:hookCall("OnUserState", self.users[packet.session])
 end
 
-function client:onBanList(proto)
-	log.trace("[SERVER] BanList")
+function client:onBanList(packet)
 	self:hookCall("OnBanList")
 end
 
-function client:onTextMessage(proto)
-	log.trace("[SERVER] TextMessage")
+function client:onTextMessage(packet)
 	self:hookCall("OnTextMessage")
 end
 
-function client:onPermissionDenied(proto)
-	log.trace("[SERVER] PermissionDenied")
+function client:onPermissionDenied(packet)
+	log.warn("PermissionDenied %s", permission.getName(packet.permission))
 	self:hookCall("OnPermissionDenied")
 end
 
-function client:onACL(proto)
-	log.trace("[SERVER] ACL")
+function client:onACL(packet)
 	self:hookCall("OnACL")
 end
 
-function client:onQueryUsers(proto)
-	log.trace("[SERVER] QueryUsers")
+function client:onQueryUsers(packet)
 	self:hookCall("OnQueryUsers")
 end
 
-function client:onCryptSetup(proto)
-	log.trace("[SERVER] CryptSetup")
+function client:onCryptSetup(packet)
 	self:hookCall("OnCryptSetup")
 end
 
-function client:onContextActionModify(proto)
-	log.trace("[SERVER] ContextActionModify")
+function client:onContextActionModify(packet)
 	self:hookCall("OnContextActionModify")
 end
 
-function client:onContextAction(proto)
-	log.trace("[SERVER] ContextAction")
+function client:onContextAction(packet)
 	self:hookCall("OnContextAction")
 end
 
-function client:onUserList(proto)
-	log.trace("[SERVER] UserList")
+function client:onUserList(packet)
 	self:hookCall("OnUserList")
 end
 
-function client:onVoiceTarget(proto)
-	log.trace("[SERVER] VoiceTarget")
+function client:onVoiceTarget(packet)
 	self:hookCall("OnVoiceTarget")
 end
 
-function client:onPermissionQuery(proto)
-	log.trace("[SERVER] PermissionQuery")
-	if proto.flush then
+function client:onPermissionQuery(packet)
+	if packet.flush then
 		self.permissions = {}
 	end
-	self.permissions[proto.channel_id] = proto.permissions
+	self.permissions[packet.channel_id] = packet.permissions
 	self:hookCall("OnPermissionQuery", self.permissions)
 end
 
-function client:onCodecVersion(proto)
-	log.trace("[SERVER] CodecVersion")
+function client:hasPermission(channel, flag)
+	return bit.band(self.permissions[channel:getID()], flag) > 0
+end
+
+function client:onCodecVersion(packet)
 	self:hookCall("OnCodecVersion")
 end
 
-function client:onUserStats(proto)
-	log.trace("[SERVER] UserStats")
-	local user = self.users[proto.session]
+function client:onUserStats(packet)
+	local user = self.users[packet.session]
+	user:updateStats(packet)
 	self:hookCall("OnUserStats")
 end
 
-function client:onRequestBlob(proto)
-	log.trace("[SERVER] RequestBlob")
+function client:onRequestBlob(packet)
 	self:hookCall("OnRequestBlob")
 end
 
-function client:onServerConfig(proto)
-	log.trace("[SERVER] ServerConfig")
-	self.config.allow_html = proto.allow_html
-	self.config.message_length = proto.message_length
-	self.config.image_message_length = proto.image_message_length
+function client:onServerConfig(packet)
+	self.config.allow_html = packet.allow_html
+	self.config.message_length = packet.message_length
+	self.config.image_message_length = packet.image_message_length
 	self:hookCall("OnServerConfig", self.config)
 end
 
-function client:onSuggestConfig(proto)
-	log.trace("[SERVER] SuggestConfig")
+function client:onSuggestConfig(packet)
 	self:hookCall("OnSuggestConfig")
 end
 
@@ -396,12 +376,30 @@ function client:getUsers()
 	return self.users
 end
 
+function client:getUser(index)
+	local tp = type(index)
+	if tp == "number" then
+		return self.users[index]
+	elseif tp == "string" then
+		for session, user in pairs(self.users) do
+			if user:getName() == index then
+				return user
+			end
+		end
+	end
+end
+
 function client:getChannels()
 	return self.channels
 end
 
-function client:getChannel(path)
-	return self.channels[0](path)
+function client:getChannel(index)
+	local tp = type(id)
+	if tp == "string" then
+		return self.channels[0](index)
+	elseif tp == "number"
+		return self.channels[index]
+	end
 end
 
 return client

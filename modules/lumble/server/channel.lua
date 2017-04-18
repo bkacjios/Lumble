@@ -62,6 +62,7 @@ function channel:getUsers()
 	end
 	return users
 end
+
 function channel:getChildren()
 	local children = {}
 	for id, channel in pairs(self.client.channels) do

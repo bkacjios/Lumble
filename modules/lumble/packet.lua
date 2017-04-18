@@ -6,9 +6,7 @@ local buffer = require("buffer")
 local log = require("log")
 
 function packet.new(id, data)
-	local packet = setmetatable({
-		data = data,
-	}, packet)
+	local packet = setmetatable({}, packet)
 
 	if type(id) == "number" then
 		packet.proto = proto[proto.MESSAGE_TYPES[id + 1]]()
@@ -39,6 +37,14 @@ function packet:set(key, value)
 	self.proto[key] = value
 end
 
+function packet:add(key, value)
+	table.insert(self.proto[key], value)
+end
+
+function packet:get(key)
+	return self.proto[key]
+end
+
 function packet:getID()
 	return self.id
 end
@@ -49,10 +55,6 @@ end
 
 function packet:serialize()
 	return self.proto:SerializeToString()
-end
-
-function packet:mergeWith(proto)
-	proto:MergeFromString(self.data)
 end
 
 function packet:getRaw()

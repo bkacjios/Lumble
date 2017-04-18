@@ -1,20 +1,20 @@
 local channel = {}
 channel.__index = channel
 
-require("extensions.table")
+local packet = require("lumble.packet")
 
-function channel.new(client, proto)
+function channel.new(client, packet)
 	return setmetatable({
 		client				= client,
-		channel_id			= proto.channel_id,
-		parent				= proto.parent,
-		name				= proto.name,
-		links				= proto.links,
-		description			= proto.description,
-		temporary			= proto.temporary,
-		position			= proto.position,
-		description_hash	= proto.description_hash,
-		max_users			= proto.max_users,
+		channel_id			= packet.channel_id,
+		parent				= packet.parent,
+		name				= packet.name,
+		links				= packet.links,
+		description			= packet.description,
+		temporary			= packet.temporary,
+		position			= packet.position,
+		description_hash	= packet.description_hash,
+		max_users			= packet.max_users,
 	}, channel)
 end
 
@@ -26,22 +26,22 @@ function channel:__call(path)
 	return self:get(path)
 end
 
-function channel:update(proto, key)
-	if proto[key] ~= nil and proto[key] ~= self[key] then
-		self[key] = proto[key]
+function channel:update(packet, key)
+	if packet[key] ~= nil and packet[key] ~= self[key] then
+		self[key] = packet[key]
 	end
 end
 
-function channel:updateFromProto(proto)
-	self:update(proto, "channel_id")
-	self:update(proto, "parent")
-	self:update(proto, "name")
-	self:update(proto, "links")
-	self:update(proto, "description")
-	self:update(proto, "temporary")
-	self:update(proto, "position")
-	self:update(proto, "description_hash")
-	self:update(proto, "max_users")
+function channel:updateAll(packet)
+	self:update(packet, "channel_id")
+	self:update(packet, "parent")
+	self:update(packet, "name")
+	self:update(packet, "links")
+	self:update(packet, "description")
+	self:update(packet, "temporary")
+	self:update(packet, "position")
+	self:update(packet, "description_hash")
+	self:update(packet, "max_users")
 end
 
 function channel:get(path)
@@ -97,30 +97,28 @@ function channel:getClient()
 	return self.client
 end
 
-function channel:message(text)
-	log.trace("[CLIENT] TextMessage [%d][channel]: %s", self.channel_id, text)
+function channel:send(packet)
+	return self.client:send(packet)
+end
 
-	local id, msg = self.client:packet("TextMessage")
-	table.insert(msg.channel_id, self.channel_id)
-	msg.message = text
-	self.client:send(id, msg)
+function channel:message(text)
+	local msg = packet.new("TextMessage")
+	msg:add("channel_id", self.channel_id)
+	msg:set("message", text)
+	self:send(msg)
 end
 
 function channel:setDescription(desc)
-	log.trace("[CLIENT] ChannelState [%d][description]: %s", self.channel_id, text)
-
-	local id, msg = self.client:packet("ChannelState")
-	msg.channel_id = self.channel_id
-	msg.description = desc
-	self.client:send(id, msg)
+	local msg = packet.new("ChannelState")
+	msg:set("channel_id", self.channel_id)
+	msg:set("description", desc)
+	self:send(msg)
 end
 
 function channel:remove()
-	log.trace("[CLIENT] ChannelRemove [%d]", self.channel_id)
-
-	local id, msg = self.client:packet("ChannelRemove")
-	msg.channel_id = self.channel_id
-	self.client:send(id, msg)
+	local msg = packet.new("ChannelRemove")
+	msg:set("channel_id", self.channel_id)
+	self:send(msg)
 end
 
 function channel:getID()
@@ -158,3 +156,9 @@ end
 function channel:getMaxUsers()
 	return self.max_users
 end
+
+function channel:hasPermission(flag)
+	return self.client:hasPermission(self, flag)
+end
+
+return channel

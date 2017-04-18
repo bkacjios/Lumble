@@ -13,14 +13,12 @@ local log = require("log")
 
 require("extensions.string")
 
-log.level = "trace"
-
 function server.new(host, port, params)
 	local conn = socket.try(socket.bind(host, port))
-	conn:settimeout(5)
+	conn:settimeout(0)
 
 	local ip, port = conn:getsockname()
-	log.info(("server started on %s:%i"):format(ip, port))
+	log.info("server started on %s:%i", ip, port)
 
 	return setmetatable({
 		socket = conn,
@@ -97,16 +95,16 @@ function server:update()
 	local peer, err = self.socket:accept()
 
 	if peer then
-		peer:settimeout(0)
 		self:onUserConnect(peer)
 	end
 
-	local read = true
-	local err
-
 	for id, user in pairs(self.users) do
+		local read = true
+		local err
+
 		while read do
 			read, err = user.socket:receive(6)
+
 			if read then
 				local buff = buffer(read)
 
@@ -130,7 +128,7 @@ end
 
 function server:onUserConnect(peer)
 	local ip, port = peer:getpeername()
-	log.info(("peer %s:%i connected"):format(ip, port))
+	log.info("peer %s:%i connected", ip, port)
 	
 	peer = socket.try(ssl.wrap(peer, self.ssl_ctx))
 	local status, err = peer:dohandshake()
@@ -139,6 +137,8 @@ function server:onUserConnect(peer)
 		log.error("peer %s:%i failed to handshake: %s", ip, port, err)
 		return
 	end
+
+	peer:settimeout(0)
 
 	local session = self:getFreeSession()
 	local user = user.new(self, peer, session)
@@ -176,6 +176,14 @@ function server:syncUser(user)
 	sync:set("welcome_text", "This is a Lua based server")
 	sync:set("permissions", 0)
 	user:send(sync)
+end
+
+function server:checkUserState(user, packet)
+	if packet.channel_id then
+		if user:hasPermission(permission.MOVE) then
+			
+		end
+	end
 end
 
 function server:getHooks()

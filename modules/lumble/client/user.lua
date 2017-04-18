@@ -1,29 +1,30 @@
 local user = {}
 user.__index = user
 
-require("extensions.table")
+local packet = require("lumble.packet")
 
-function user.new(client, proto)
+function user.new(client, packet)
 	return setmetatable({
 		client			= client,
-		session			= proto.session,
-		name			= proto.name,
-		user_id			= proto.user_id,
-		channel_id		= proto.channel_id,
-		mute			= proto.mute,
-		deaf			= proto.deaf,
-		suppress		= proto.suppress,
-		self_mute		= proto.self_mute,
-		self_deaf		= proto.self_deaf,
-		texture			= proto.texture,
-		plugin_context	= proto.plugin_context,
-		plugin_identity	= proto.plugin_identity,
-		comment			= proto.comment,
-		hash			= proto.hash,
-		comment_hash	= proto.comment_hash,
-		texture_hash	= proto.texture_hash,
-		priority_speaker = proto.priority_speaker,
-		recording		= proto.recording,
+		session			= packet.session,
+		name			= packet.name,
+		user_id			= packet.user_id,
+		channel_id		= packet.channel_id,
+		mute			= packet.mute,
+		deaf			= packet.deaf,
+		suppress		= packet.suppress,
+		self_mute		= packet.self_mute,
+		self_deaf		= packet.self_deaf,
+		texture			= packet.texture,
+		plugin_context	= packet.plugin_context,
+		plugin_identity	= packet.plugin_identity,
+		comment			= packet.comment,
+		hash			= packet.hash,
+		comment_hash	= packet.comment_hash,
+		texture_hash	= packet.texture_hash,
+		priority_speaker = packet.priority_speaker,
+		recording		= packet.recording,
+		stats			= {},
 	}, user)
 end
 
@@ -31,79 +32,79 @@ function user:__tostring()
 	return ("%s[%d][%s]"):format(self.name, self.session, self.user_id == 0 and "Unregistered" or "Registered")
 end
 
-function user:update(proto, key)
-	if proto[key] ~= nil and proto[key] ~= self[key] then
-		self[key] = proto[key]
+function user:update(packet, key)
+	if packet[key] ~= nil and packet[key] ~= self[key] then
+		self[key] = packet[key]
 	end
 end
 
-function user:updateFromProto(proto)
-	self:update(proto, "session")
-	self:update(proto, "name")
-	self:update(proto, "user_id")
-	self:update(proto, "channel_id")
-	self:update(proto, "mute")
-	self:update(proto, "deaf")
-	self:update(proto, "suppress")
-	self:update(proto, "self_mute")
-	self:update(proto, "self_deaf")
-	self:update(proto, "texture")
-	self:update(proto, "plugin_context")
-	self:update(proto, "plugin_identity")
-	self:update(proto, "comment")
-	self:update(proto, "hash")
-	self:update(proto, "comment_hash")
-	self:update(proto, "texture_hash")
-	self:update(proto, "priority_speaker")
-	self:update(proto, "recording")
+function user:updateAll(packet)
+	self:update(packet, "session")
+	self:update(packet, "name")
+	self:update(packet, "user_id")
+	self:update(packet, "channel_id")
+	self:update(packet, "mute")
+	self:update(packet, "deaf")
+	self:update(packet, "suppress")
+	self:update(packet, "self_mute")
+	self:update(packet, "self_deaf")
+	self:update(packet, "texture")
+	self:update(packet, "plugin_context")
+	self:update(packet, "plugin_identity")
+	self:update(packet, "comment")
+	self:update(packet, "hash")
+	self:update(packet, "comment_hash")
+	self:update(packet, "texture_hash")
+	self:update(packet, "priority_speaker")
+	self:update(packet, "recording")
+end
+
+function user:updateStats(packet)
+
 end
 
 function user:getClient()
 	return self.client
 end
 
-function user:message(text)
-	log.trace("[CLIENT] TextMessage [all]: %s", text)
+function user:send(packet)
+	return self.client:send(packet)
+end
 
-	local id, msg = self.client:packet("TextMessage")
-	table.insert(msg.session, self.session)
-	msg.message = text
-	self.client:send(id, msg)
+function user:message(text)
+	local msg = packet.new("TextMessage")
+	msg:add("session", self.session)
+	msg:set("message", text)
+	self:send(msg)
 end
 
 function user:kick(reason)
-	log.trace("[CLIENT] UserRemove [%d][kick]: %s", self.session, reason)
-
-	local id, msg = self.client:packet("UserRemove")
-	msg.session = self.session
-	msg.reason = reason
-	self.client:send(id, msg)
+	local msg = packet.new("UserRemove")
+	msg:set("session", self.session)
+	msg:set("reason", reason)
+	self:send(msg)
 end
 
 function user:ban(reason)
-	log.trace("[CLIENT] UserRemove [%d][ban]: %s", self.session, reason)
-
-	local id, msg = self.client:packet("UserRemove")
-	msg.session = self.session
-	msg.reason = reason
-	msg.ban = true
-	self.client:send(id, msg)
+	local msg = packet.new("UserRemove")
+	msg:set("session", self.session)
+	msg:set("reason", reason)
+	msg:set("ban", true)
+	self:send(msg)
 end
 
 function user:move(channel)
-	log.trace("[CLIENT] UserState [%d][move]: %s", self.session, reason)
-
-	local id, msg = self.client:packet("UserState")
-	msg.session = self.session
-	msg.channel_id = channel:getID()
-	self.client:send(id, msg)
+	local msg = packet.new("UserState")
+	msg:set("session", self.session)
+	msg:set("channel_id", channel:getID())
+	self:send(msg)
 end
 
 function user:requestStats(stats_only)
-	local id, msg = self.client:packet("UserStats")
-	msg.session = self.session
-	msg.stats_only = stats_only and true or false
-	self.client:send(id, msg)
+	local msg = packet.new("UserStats")
+	msg:set("session", self.session)
+	msg:set("stats_only", stats_only and true or false)
+	self:send(msg)
 end
 
 function user:getChannel()

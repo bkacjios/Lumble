@@ -370,14 +370,13 @@ end
 local function _AddPropertiesForNonRepeatedScalarField(field, message)
   local property_name = field.name
   local type_checker = GetTypeChecker(field.cpp_type, field.type)
-  local default_value = field.default_value
 
   message._getter[property_name] = function(self)
     local value =  self._fields[field]
     if value ~= nil then
       return self._fields[field]
     else
-      return field.has_default_value and default_value or nil
+      return field.has_default_value and field.default_value or nil
     end
   end
 
