@@ -394,10 +394,10 @@ function client:getChannels()
 end
 
 function client:getChannel(index)
-	local tp = type(id)
+	local tp = type(index)
 	if tp == "string" then
 		return self.channels[0](index)
-	elseif tp == "number"
+	elseif tp == "number" then
 		return self.channels[index]
 	end
 end

@@ -141,13 +141,12 @@ function server:onUserConnect(peer)
 	peer:settimeout(0)
 
 	local session = self:getFreeSession()
-	local user = user.new(self, peer, session)
 
 	if not session then
 		return
 	end
 
-	self.users[session] = user
+	self.users[session] = user.new(self, peer, session)
 end
 
 function server:onUserDisconnect(user, err)
