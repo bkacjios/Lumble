@@ -4,59 +4,20 @@ user.__index = user
 local packet = require("lumble.packet")
 
 function user.new(client, packet)
-	return setmetatable({
-		client			= client,
-		session			= packet.session,
-		name			= packet.name,
-		user_id			= packet.user_id,
-		channel_id		= packet.channel_id,
-		mute			= packet.mute,
-		deaf			= packet.deaf,
-		suppress		= packet.suppress,
-		self_mute		= packet.self_mute,
-		self_deaf		= packet.self_deaf,
-		texture			= packet.texture,
-		plugin_context	= packet.plugin_context,
-		plugin_identity	= packet.plugin_identity,
-		comment			= packet.comment,
-		hash			= packet.hash,
-		comment_hash	= packet.comment_hash,
-		texture_hash	= packet.texture_hash,
-		priority_speaker = packet.priority_speaker,
-		recording		= packet.recording,
-		stats			= {},
+	local user = setmetatable({
+		client = client,
+		stats = {},
 	}, user)
+
+	for desc, value in packet:list() do
+		user[desc.name] = value
+	end
+	
+	return user
 end
 
 function user:__tostring()
 	return ("%s[%d][%s]"):format(self.name, self.session, self.user_id == 0 and "Unregistered" or "Registered")
-end
-
-function user:update(packet, key)
-	if packet[key] ~= nil and packet[key] ~= self[key] then
-		self[key] = packet[key]
-	end
-end
-
-function user:updateAll(packet)
-	self:update(packet, "session")
-	self:update(packet, "name")
-	self:update(packet, "user_id")
-	self:update(packet, "channel_id")
-	self:update(packet, "mute")
-	self:update(packet, "deaf")
-	self:update(packet, "suppress")
-	self:update(packet, "self_mute")
-	self:update(packet, "self_deaf")
-	self:update(packet, "texture")
-	self:update(packet, "plugin_context")
-	self:update(packet, "plugin_identity")
-	self:update(packet, "comment")
-	self:update(packet, "hash")
-	self:update(packet, "comment_hash")
-	self:update(packet, "texture_hash")
-	self:update(packet, "priority_speaker")
-	self:update(packet, "recording")
 end
 
 function user:updateStats(packet)

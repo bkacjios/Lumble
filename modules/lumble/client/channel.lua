@@ -4,18 +4,15 @@ channel.__index = channel
 local packet = require("lumble.packet")
 
 function channel.new(client, packet)
-	return setmetatable({
-		client				= client,
-		channel_id			= packet.channel_id,
-		parent				= packet.parent,
-		name				= packet.name,
-		links				= packet.links,
-		description			= packet.description,
-		temporary			= packet.temporary,
-		position			= packet.position,
-		description_hash	= packet.description_hash,
-		max_users			= packet.max_users,
+	local channel = setmetatable({
+		client = client
 	}, channel)
+
+	for desc, value in packet:list() do
+		channel[desc.name] = value
+	end
+
+	return channel
 end
 
 function channel:__tostring()
@@ -24,24 +21,6 @@ end
 
 function channel:__call(path)
 	return self:get(path)
-end
-
-function channel:update(packet, key)
-	if packet[key] ~= nil and packet[key] ~= self[key] then
-		self[key] = packet[key]
-	end
-end
-
-function channel:updateAll(packet)
-	self:update(packet, "channel_id")
-	self:update(packet, "parent")
-	self:update(packet, "name")
-	self:update(packet, "links")
-	self:update(packet, "description")
-	self:update(packet, "temporary")
-	self:update(packet, "position")
-	self:update(packet, "description_hash")
-	self:update(packet, "max_users")
 end
 
 function channel:get(path)
@@ -83,6 +62,7 @@ function channel:getUsers()
 	end
 	return users
 end
+
 function channel:getChildren()
 	local children = {}
 	for id, channel in pairs(self.client.channels) do

@@ -7,6 +7,7 @@ local user = require("lumble.client.user")
 local permission = require("lumble.permission")
 local packet = require("lumble.packet")
 local proto = require("lumble.proto")
+local event = require("lumble.event")
 
 local buffer = require("buffer")
 local socket = require("socket")
@@ -14,7 +15,7 @@ local ssl = require("ssl")
 local bit = require("bit")
 local log = require("log")
 
-log.level = "trace"
+log.level = "info"
 
 require("extensions.string")
 require("extensions.table")
@@ -88,9 +89,10 @@ local function onError(err)
 end
 
 function client:hookCall(name, ...)
+	log.debug("Call hook %q", name)
 	if not self.hooks[name] then return end
 	for desc, callback in pairs(self.hooks[name]) do
-		local succ, ret = xpcall(callback, onError, ...)
+		local succ, ret = xpcall(callback, onError, self, ...)
 		if not succ then
 			log.error("%s error: %s", name, desc)
 		else
@@ -240,7 +242,7 @@ function client:onServerSync(packet)
 end
 
 function client:onChannelRemove(packet)
-	self:hookCall("OnChannelRemove", self.channels[packet.channel_id])
+	self:hookCall("OnChannelRemove", event.new(self, packet.proto))
 	self.channels[packet.channel_id] = nil
 end
 
@@ -248,19 +250,23 @@ function client:onChannelState(packet)
 	if not self.channels[packet.channel_id] then
 		self.channels[packet.channel_id] = channel.new(self, packet)
 		if self.synced then
-			self:hookCall("OnChannelCreated", self.channels[packet.channel_id])
+			self:hookCall("OnChannelCreated", event.new(self, packet.proto))
 		end
 	else
-		self.channels[packet.channel_id]:updateAll(packet)
+		local channel = self.channel[packet.channel_id]
+		for desc, value in packet:list() do
+			local name = desc.name
+			if channel[name] ~= value then
+				channel[name] = value
+			end
+		end
 	end
-	self:hookCall("OnChannelState", self.channels[packet.channel_id])
+	self:hookCall("OnChannelState", event.new(self, packet.proto))
 end
 
 function client:onUserRemove(packet)
 	local user = self.users[packet.session]
 	local actor = packet.actor and self.users[packet.actor] or nil
-
-	self:hookCall("OnUserRemove", user)
 
 	local message = "disconnected"
 	
@@ -270,8 +276,7 @@ function client:onUserRemove(packet)
 	end
 
 	log.info("%s %s", user, message)
-	self:hookCall("OnUserDisconnected", user)
-
+	self:hookCall("OnUserRemove", event.new(self, packet.proto, true))
 	self.users[packet.session] = nil
 end
 
@@ -280,14 +285,25 @@ function client:onUserState(packet)
 		local user = user.new(self, packet)
 		if self.synced then
 			log.info("%s connected", user)
-			self:hookCall("OnUserConnected", self.users[packet.session])
+			self:hookCall("OnUserConnected", event.new(self, packet.proto))
 		end
 		user:requestStats()
 		self.users[packet.session] = user
 	else
-		self.users[packet.session]:updateAll(packet)
+		local user = self.users[packet.session]
+		for desc, value in packet:list() do
+			local name = desc.name
+			if user[name] ~= value then
+				if name == "channel_id" then
+					local event = event.new(self, packet.proto)
+					event.channel_from = user:getChannel()
+					self:hookCall("OnUserChannel", event)
+				end
+				user[name] = value
+			end
+		end
 	end
-	self:hookCall("OnUserState", self.users[packet.session])
+	self:hookCall("OnUserState", event.new(self, packet.proto))
 end
 
 function client:onBanList(packet)
@@ -295,11 +311,11 @@ function client:onBanList(packet)
 end
 
 function client:onTextMessage(packet)
-	self:hookCall("OnTextMessage")
+	self:hookCall("OnTextMessage", event.new(self, packet.proto, true))
 end
 
 function client:onPermissionDenied(packet)
-	log.warn("PermissionDenied %s", permission.getName(packet.permission))
+	log.warn("PermissionDenied: %s", permission.getName(packet.permission))
 	self:hookCall("OnPermissionDenied")
 end
 
@@ -350,7 +366,7 @@ end
 function client:onUserStats(packet)
 	local user = self.users[packet.session]
 	user:updateStats(packet)
-	self:hookCall("OnUserStats")
+	self:hookCall("OnUserStats", event.new(self, packet.proto, true))
 end
 
 function client:onRequestBlob(packet)
@@ -399,6 +415,8 @@ function client:getChannel(index)
 		return self.channels[0](index)
 	elseif tp == "number" then
 		return self.channels[index]
+	else
+		return self.channels[0]
 	end
 end
 

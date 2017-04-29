@@ -45,6 +45,10 @@ function packet:get(key)
 	return self.proto[key]
 end
 
+function packet:list()
+	return self.proto:ListFields()
+end
+
 function packet:getID()
 	return self.id
 end

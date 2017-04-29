@@ -20,7 +20,7 @@ function string.trim(self, char)
 	return (self:gsub("^"..char.."*(.-)"..char.."*$", "%1" ))
 end
 
-function string.AddCommas( str )
+function string.AddCommas(str)
 	return tostring(str):reverse():gsub("(...)", "%1,"):gsub(",$", ""):reverse()
 end
 
@@ -73,7 +73,7 @@ function string.parseArgs(line)
 	return ret
 end
 
-function string.Plural( str, num, suffix )
+function string.Plural(str, num, suffix)
 	return num == 1 and str or (str .. (suffix or "s"))
 end
 
