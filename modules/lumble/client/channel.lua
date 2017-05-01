@@ -16,7 +16,7 @@ function channel.new(client, packet)
 end
 
 function channel:__tostring()
-	return ("Channel [%s][%d]"):format(self.name, self.channel_id)
+	return ("channel[%d][%s]"):format(self.channel_id, self.name)
 end
 
 function channel:__call(path)

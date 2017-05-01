@@ -15,7 +15,7 @@ local ssl = require("ssl")
 local bit = require("bit")
 local log = require("log")
 
-log.level = "info"
+log.level = "debug"
 
 require("extensions.string")
 require("extensions.table")
@@ -89,7 +89,7 @@ local function onError(err)
 end
 
 function client:hookCall(name, ...)
-	log.debug("Call hook %q", name)
+	log.trace("Call hook %q", name)
 	if not self.hooks[name] then return end
 	for desc, callback in pairs(self.hooks[name]) do
 		local succ, ret = xpcall(callback, onError, self, ...)
@@ -178,13 +178,15 @@ function client:update()
 				local packet = packet.new(id, read)
 				self:onPacket(packet)
 			end
-		elseif err ~= "wantread" and err ~= "timeout" then
+		elseif err == "wantread" or err == "timeout" then
+			return true
+		else
 			log.error("receive error %q", err)
 			return false
 		end
 	end
 
-	return true
+	return false
 end
 
 function client:sleep(t)
@@ -237,7 +239,7 @@ function client:onServerSync(packet)
 	self.session = packet.session
 	self.max_bandwith = packet.max_bandwith
 	self.me = self.users[self.session]
-	log.info("Welcome Message: %s", packet.welcome_text:StripHTML())
+	log.info("Welcome Message: %s", packet.welcome_text:stripHTML())
 	self:hookCall("OnServerSync", self.me)
 end
 
@@ -266,6 +268,10 @@ end
 
 function client:onUserRemove(packet)
 	local user = self.users[packet.session]
+
+	-- Sometimes we get a phantom remove?
+	if not user then return end
+
 	local actor = packet.actor and self.users[packet.actor] or nil
 
 	local message = "disconnected"

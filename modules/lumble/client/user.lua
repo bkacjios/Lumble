@@ -32,24 +32,24 @@ function user:send(packet)
 	return self.client:send(packet)
 end
 
-function user:message(text)
+function user:message(text, ...)
 	local msg = packet.new("TextMessage")
 	msg:add("session", self.session)
-	msg:set("message", text)
+	msg:set("message", text:format(...):escapeHTML())
 	self:send(msg)
 end
 
-function user:kick(reason)
+function user:kick(reason, ...)
 	local msg = packet.new("UserRemove")
 	msg:set("session", self.session)
-	msg:set("reason", reason)
+	msg:set("reason", reason:format(...))
 	self:send(msg)
 end
 
-function user:ban(reason)
+function user:ban(reason, ...)
 	local msg = packet.new("UserRemove")
 	msg:set("session", self.session)
-	msg:set("reason", reason)
+	msg:set("reason", reason:format(...))
 	msg:set("ban", true)
 	self:send(msg)
 end

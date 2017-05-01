@@ -43,12 +43,26 @@ local function entitySwap(orig,n,s)
 	return entityMap[s] or n=="#" and char(s) or n=="#x" and char(tonumber(s,16)) or orig
 end
 
-function string.unescape(str)
+function string.unescapeHTML(str)
 	local unescaped = gsub(str, '(&(#?x?)([%d%a]+);)', entitySwap)
 	return unescaped
 end
 
-function string.StripHTML(str)
+local htmlEntities = {
+    ["&"] = "&amp;",
+    ["<"] = "&lt;",
+    [">"] = "&gt;",
+    ['"'] = "&quot;",
+    ["'"] = "&#39;",
+    ["/"] = "&#47;"
+}
+
+function string.escapeHTML(s)
+    assert("Expected string in argument #1.")
+    return (string.gsub(s, "[}{\">/<'&]", htmlEntities))
+end
+
+function string.stripHTML(str)
 	local stripped = gsub(str, "<.->", "")
 	return stripped
 end
