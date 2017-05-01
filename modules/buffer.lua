@@ -4,7 +4,11 @@ local BUFFER = {}
 BUFFER.__index = BUFFER
 
 local function Buffer(str)
-	return setmetatable({buffer = str or "", position = 1}, BUFFER)
+	return setmetatable({buffer = str or "", position = 0}, BUFFER)
+end
+
+function BUFFER:__tostring()
+	return ("Buffer[%d]"):format(#self, self.buffer)
 end
 
 function BUFFER:getBuffer()
@@ -24,9 +28,9 @@ function BUFFER:length()
 end
 BUFFER.len = BUFFER.length
 
-function BUFFER:write( str )
-	local before = string.sub(self.buffer, 0, self.position - 1) or ""
-	local after = string.sub(self.buffer, self.position) or ""
+function BUFFER:write(str)
+	local before = string.sub(self.buffer, 0, self.position)
+	local after = string.sub(self.buffer, self.position + 1)
 	self.buffer = before .. str .. after
 	self.position = self.position + string.len(str)
 end
@@ -39,6 +43,76 @@ function BUFFER:writeChar(char)
 	self:write(char)
 end
 
+function BUFFER:readLen(len)
+	local ret = string.sub(self.buffer, self.position + 1, self.position + len)
+	self.position = self.position + len
+	return ret
+end
+
+function BUFFER:readAll()
+	return self:readLen(#self)
+end
+
+function BUFFER:readLine()
+	local pos = self:seek()
+	local all = self:readAll()
+	self:seek("set", pos)
+
+	local startpos, endpos = all:find(".[\r?\n]")
+
+	if not endpos then
+		endpos = #all
+	end
+
+	local ret = string.sub(all, 1, endpos)
+	self.position = pos + endpos
+	return ret
+end
+
+function BUFFER:seek(whence, offset)
+	whence = whence or "cur"
+	offset = offset or 0
+	if whence == "cur" then
+		self.position = self.position + offset
+	elseif whence == "set" then
+		self.position = offset
+	elseif whence == "end" then
+		self.position = #self + offset
+	end
+	return self.position
+end
+
+function BUFFER:read(...)
+	local args = {...}
+
+	if #args <= 0 then
+		return self:readLine()
+	end
+
+	local returns = {}
+
+	for n,arg in pairs(args) do
+		local buffer = {}
+		if type(arg) == "string" then
+			if arg:sub(1,2) == "*a" then
+				table.insert(returns, self:readAll())
+			elseif arg:sub(1,2) == "*l" then
+				table.insert(returns, self:readLine())
+			else
+				return error(format("bad argument #%i to 'read' (invalid format)",n))
+			end
+		elseif arg > 0 and self.position < #self then
+			table.insert(returns, self:readLen(arg))
+		end
+	end
+
+	if #returns > 0 then
+		return unpack(returns)
+	end
+
+	return nil
+end
+
 function BUFFER:readChar()
 	local ret = string.sub(self.buffer, self.position, self.position)
 	self.position = self.position + 1
@@ -46,10 +120,10 @@ function BUFFER:readChar()
 end
 
 function BUFFER:readByte()
-	return string.byte(self:readChar())
+	return string.byte(self:readLen(1))
 end
 
-function BUFFER:writeInt( int )
+function BUFFER:writeInt(int)
 	self:writeByte(bit.band(bit.rshift(int,24),0xFF))
 	self:writeByte(bit.band(bit.rshift(int,16),0xFF))
 	self:writeByte(bit.band(bit.rshift(int,8),0xFF))
@@ -60,7 +134,7 @@ function BUFFER:readInt()
 	return bit.lshift(self:readByte(), 24) + bit.lshift(self:readByte(), 16) + bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
 end
 
-function BUFFER:writeFloat( float )
+function BUFFER:writeFloat(float)
 	if float == 0 then
 		self:writeByte(0x00)
 		self:writeByte(0x00)
@@ -146,10 +220,6 @@ function BUFFER:readString()
 	local ret = string.sub(self.buffer, self.position, self.position + len)
 	self.position = self.position + len + 1
 	return ret
-end
-
-function BUFFER:seek( pos )
-	self.position = pos
 end
 
 function BUFFER:next()
