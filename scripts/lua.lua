@@ -2,8 +2,6 @@ local lua = {}
 
 local log = require("log")
 
-local sandbox_G = {}
-
 local env = {
 	assert = assert,
 	error = error,
@@ -111,22 +109,45 @@ local function sandbox(user, func)
 	}, env))
 end
 
-function lua.run(user, str)
+function lua.run(client, event)
+	local str = event.message:unescapeHTML():stripHTML()
+	local user = event.actor
+
+	-- Ignore chat messages to the entire channel
+	if event.channels then return end
+
 	local lua, err = loadstring(str)
 
 	log.debug("%s ran: %s", user, str)
 	
 	if not lua then
 		log.warn("%s compile error: (%s)", user, err)
-		user:message("compile error: %s", err)
+		user:message("compile error: %s", err:escapeHTML())
 	else
 		sandbox(user, lua)
+
+		local quota = 500000
+
+		local timeout = function()
+			error("instructions exceeded", 2)
+		end
+
+		jit.off()
+		debug.sethook(timeout, "", quota)
+
 		local status, err = pcall(lua)
 		if not status then
 			log.warn("%s runtime error: (%s)", user, err)
-			user:message("runtime error: %s", err)
+			user:message("runtime error: %s", err:escapeHTML())
 		end
+
+		debug.sethook()
+		jit.on()
 	end
+end
+
+function lua.install(client)
+	client:hook("OnTextMessage", "Lua - Run", lua.run)
 end
 
 return lua

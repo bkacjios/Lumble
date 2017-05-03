@@ -35,7 +35,7 @@ end
 function user:message(text, ...)
 	local msg = packet.new("TextMessage")
 	msg:add("session", self.session)
-	msg:set("message", text:format(...):escapeHTML())
+	msg:set("message", text:format(...))
 	self:send(msg)
 end
 

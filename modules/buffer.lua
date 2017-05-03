@@ -58,13 +58,13 @@ function BUFFER:readLine()
 	local all = self:readAll()
 	self:seek("set", pos)
 
-	local startpos, endpos = all:find(".[\r?\n]")
+	local startpos, endpos = all:find(".-[\r?\n]")
 
 	if not endpos then
 		endpos = #all
 	end
 
-	local ret = string.sub(all, 1, endpos)
+	local ret = string.sub(all, startpos, endpos)
 	self.position = pos + endpos
 	return ret
 end

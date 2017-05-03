@@ -11,7 +11,7 @@ local log = { _version = "0.1.0" }
 
 log.usecolor = true
 log.outfile = nil
-log.level = "trace"
+log.level = "debug"
 
 local modes = {
 	{ name = "trace", color = "\27[34m", },
@@ -38,6 +38,8 @@ for i, x in ipairs(modes) do
 		end
 
 		msg = string.format(msg, ...)
+		--local info = debug.getinfo(2, "Sl")
+		--local lineinfo = info.short_src .. ":" .. info.currentline
 
 		-- Output to console
 		print(string.format("%s[%-6s%s]%s %s",

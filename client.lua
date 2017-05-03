@@ -2,6 +2,8 @@ package.path = package.path .. ';./modules/?.lua;./modules/?/init.lua'
 
 require("extensions.string")
 
+local autoreload = require("autoreload")
+
 local mumble = require("lumble")
 local afk = require("scripts.afk")
 local lua = require("scripts.lua")
@@ -16,14 +18,11 @@ client:hook("OnServerSync", function(client, me)
 	me:move(channel)
 end)
 
-client:hook("OnTextMessage", function(client, event)
-	local str = event.message:unescapeHTML():stripHTML()
-	lua.run(event.actor, str)
-end)
-
+lua.install(client)
 afk.install(client)
 
 local function main()
+	autoreload.poll()
 	client:update()
 end
 

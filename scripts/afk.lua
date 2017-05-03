@@ -15,10 +15,6 @@ function afk.checkStats(client, event)
 
 	local afkchannel = client:getChannel(config.afk.channel[root])
 
-	if user:getName() == "Connor" then
-		afkchannel = client:getChannels()[30] or afkchannel
-	end
-
 	-- Ignore people in the AFK channel
 	if not afkchannel or user:getChannel() == afkchannel then return end
 
