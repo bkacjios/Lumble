@@ -125,13 +125,10 @@ local safe_function = {
 	next = next,
 	ipairs = ipairs,
 	_inext = _inext,
-	unpack = unpack,
 	print = print,	-- for debug
-	type = type,
 }
 
 function global_mt:__index(k)
-	print("global_mt:__index", k)
 	assert(type(k) == "string", "Global name must be a string")
 	if safe_function[k] then
 		return safe_function[k]
@@ -389,25 +386,32 @@ local function match_upvalues(map, upvalues)
 	end
 end
 
+local function reload_mod(mod)
+	local _LOADED = debug.getregistry()._LOADED
+	local all = {}
+	sandbox.require(mod)
+	local m = sandbox.module(mod)
+	local objs = enum_object(m.module)
+	local old_module = _LOADED[mod]
+	local result = {
+		globals = {},
+		map = {},
+		upvalues = {},
+		old_module = old_module,
+		module = m ,
+		objects = objs
+	}
+	all[mod] = result
+	match_objects(objs, old_module, result.map, result.globals) -- find match table/func between old module and new one
+	match_upvalues(result.map, result.upvalues) -- find match func's upvalues
+	return all
+end
+
 local function reload_list(list)
 	local _LOADED = debug.getregistry()._LOADED
 	local all = {}
 	for _, mod in ipairs(list) do
-		sandbox.require(mod)
-		local m = sandbox.module(mod)
-		local objs = enum_object(m.module)
-		local old_module = _LOADED[mod]
-		local result = {
-			globals = {},
-			map = {},
-			upvalues = {},
-			old_module = old_module,
-			module = m ,
-			objects = objs
-		}
-		all[mod] = result
-		match_objects(objs, old_module, result.map, result.globals) -- find match table/func between old module and new one
-		match_upvalues(result.map, result.upvalues) -- find match func's upvalues
+		reload_mod(mod)
 	end
 	return all
 end
@@ -700,23 +704,19 @@ local function update_funcs(map)
 	update_funcs_(root)
 end
 
-function reload.reload(list)
+function reload.reload(name)
 	local print = reload.print
 	local REG = debug.getregistry()
 	local _LOADED = REG._LOADED
-	local need_reload = {}
-	for _,mod in ipairs(list) do
-		need_reload[mod] = true
-	end
 	local tmp = {}
 	for k in pairs(_LOADED) do
-		if not need_reload[k] then
+		if k ~= name then
 			table.insert(tmp, k)
 		end
 	end
 	sandbox.init(tmp)	-- init dummy modoule existed
 
-	local ok, result = xpcall(reload_list, debug.traceback, list)
+	local ok, result = xpcall(reload_mod, debug.traceback, name)
 	if not ok then
 		sandbox.clear()
 		if print then print("ERROR", result) end

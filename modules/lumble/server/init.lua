@@ -34,6 +34,8 @@ function server.new(host, port, params)
 		permissions = {},
 		config = {
 			max_users = 10,
+			max_bandwidth = 48000,
+			welcome_text = "This is a Lua based Mumble server!",
 		},
 		hooks = {},
 	}, server)
@@ -135,6 +137,11 @@ function server:onUserConnect(peer)
 
 	if not status then
 		log.error("peer %s:%i failed to handshake: %s", ip, port, err)
+		local state = packet.new("Reject")
+		state:set("reason", "A certificate is required to connect to this server")
+		state:set("type", proto.REJECT_REJECTTYPE_NOCERTIFICATE_ENUM)
+		peer:send(state:getRaw())
+		peer:close()
 		return
 	end
 
@@ -143,6 +150,11 @@ function server:onUserConnect(peer)
 	local session = self:getFreeSession()
 
 	if not session then
+		local state = packet.new("Reject")
+		state:set("reason", ("Server is full (max %d users)"):format(self.config.max_users))
+		state:set("type", proto.REJECT_REJECTTYPE_SERVERFULL_ENUM)
+		peer:send(state:getRaw())
+		peer:close()
 		return
 	end
 
@@ -171,9 +183,8 @@ function server:syncUser(user)
 	end
 	local sync = packet.new("ServerSync")
 	sync:set("session", user:getSession())
-	sync:set("max_bandwidth", 48000)
-	sync:set("welcome_text", "This is a Lua based server")
-	sync:set("permissions", 0)
+	sync:set("max_bandwidth", self.config.max_bandwidth)
+	sync:set("welcome_text", self.config.welcome_text)
 	user:send(sync)
 end
 

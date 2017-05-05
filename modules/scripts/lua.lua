@@ -126,7 +126,7 @@ function lua.run(client, event)
 	else
 		sandbox(user, lua)
 
-		local quota = 500000
+		local quota = 50000
 
 		local timeout = function()
 			error("instructions exceeded", 2)
@@ -139,6 +139,8 @@ function lua.run(client, event)
 		if not status then
 			log.warn("%s runtime error: (%s)", user, err)
 			user:message("runtime error: %s", err:escapeHTML())
+		elseif err then
+			user:message(tostring(err))
 		end
 
 		debug.sethook()

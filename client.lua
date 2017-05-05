@@ -1,29 +1,15 @@
 package.path = package.path .. ';./modules/?.lua;./modules/?/init.lua'
 
-require("extensions.string")
-
 local autoreload = require("autoreload")
-
-local mumble = require("lumble")
-local afk = require("scripts.afk")
-local lua = require("scripts.lua")
 local terminal = require("terminal")
 local concommand = require("concommand")
+local mumble = require("lumble")
 
-local client = mumble.connect("mbl27.gameservers.com", 10004, "config/dongerbot.pem", "config/dongerbot.key")
-client:auth("LuaBot")
-
-client:hook("OnServerSync", function(client, me)
-	local channel = client:getChannel("DongerBots Chamber of sentience learning")
-	me:move(channel)
-end)
-
-lua.install(client)
-afk.install(client)
+require("scripts")
 
 local function main()
 	autoreload.poll()
-	client:update()
+	mumble.update()
 end
 
 terminal.new(main, concommand.loop)

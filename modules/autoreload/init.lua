@@ -1,29 +1,38 @@
 local lfs = require("lfs")
 local log = require("log")
 local reload = require("autoreload.reload")
+require("extensions.io")
 
 local autoreload = {
 	monitoring = {},
-	hooks = {},
 	lastpoll = os.time(),
 }
 
 function autoreload.poll()
 	if autoreload.lastpoll > os.time() then return end
-    autoreload.lastpoll = os.time() + 1
-
-    local list = {}
+	autoreload.lastpoll = os.time() + 1
 
 	for module, info in pairs(autoreload.monitoring) do
-		local mod = lfs.attributes(info.file, "modification")
-		if info.mod ~= mod then
-			info.mod = mod
-			table.insert(list, module)
-            log.debug("%s marked for reload", module)
+		local changed = lfs.attributes(info.file, "modification")
+		if info.changed ~= changed then
+			info.changed = changed
+
+			local f = io.open(info.file, "rb")
+			local crc = f:crc32()
+			f:close()
+
+			if info.crc ~= crc then
+				info.crc = crc
+				
+				local status, err = reload.reload(module)
+				if status then
+					log.debug("%s[%q] reloaded: %s", module, info.file, crc)
+				else
+					log.error("%s[%q] reload failed: %s", module, info.file, err)
+				end
+			end
 		end
 	end
-
-	reload.reload(list)
 end
 
 function autoreload.getPackageFile(module)
@@ -37,16 +46,25 @@ function autoreload.getPackageFile(module)
 end
 
 function autoreload.watch(module)
+	if module == "autoreload" then return end
+
 	local file = autoreload.getPackageFile(module)
 
-	if not file then
-		log.warn("lua module '".. module .. "' not found: skipping, probably C module")
-		return
-	end
+	-- log.warn("lua module '".. module .. "' not found: skipping, probably C module")
+	if not file then return end
+
+	if autoreload.monitoring[module] then return end
+
+	log.trace("watching %s[%q]", module, file)
+
+	local f = io.open(file, "rb")
+	local crc = f:crc32()
+	f:close()
 
 	autoreload.monitoring[module] = {
 		file = file,
-		mod = lfs.attributes(file, "modification")
+		crc = crc,
+		changed = lfs.attributes(file, "modification")
 	}
 end
 

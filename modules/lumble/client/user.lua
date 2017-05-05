@@ -21,7 +21,9 @@ function user:__tostring()
 end
 
 function user:updateStats(packet)
-
+	for desc, value in packet:list() do
+		self.stats[desc.name] = value
+	end
 end
 
 function user:getClient()
@@ -138,6 +140,10 @@ end
 
 function user:isRecording()
 	return self.recording
+end
+
+function user:getStats()
+	return self.stats
 end
 
 return user

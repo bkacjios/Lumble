@@ -20,6 +20,13 @@ local modes = {
 	{ name = "warn",  color = "\27[33m", },
 	{ name = "error", color = "\27[31m", },
 	{ name = "fatal", color = "\27[35m", },
+
+	--[[{ name = "btrace", color = "\27[1;34m", },
+	{ name = "bdebug", color = "\27[1;36m", },
+	{ name = "binfo",  color = "\27[1;32m", },
+	{ name = "bwarn",  color = "\27[1;33m", },
+	{ name = "berror", color = "\27[1;31m", },
+	{ name = "bfatal", color = "\27[1;35m", },]]
 }
 
 local levels = {}

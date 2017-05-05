@@ -104,3 +104,14 @@ function string.longest(...)
 	end
 	return longest
 end
+
+local STRING = getmetatable("")
+
+function STRING:__index(index)
+	local val = string[index]
+	if val then
+		return val
+	elseif tonumber(index) then
+		return self:sub(index, index)
+	end
+end

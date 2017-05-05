@@ -18,20 +18,23 @@ local log = require("log")
 log.level = "debug"
 
 require("extensions.string")
-require("extensions.table")
 
 function client.new(host, port, params)
 	local conn = socket.tcp()
 	conn:settimeout(5)
-	assert(conn:connect(host, port))
-	conn = assert(ssl.wrap(conn, params))
-	assert(conn:dohandshake())
+	local status, err = conn:connect(host, port)
+	if not status then return false, err end
+	conn = ssl.wrap(conn, params)
+	if not conn then return false, err end
+	status, err = conn:dohandshake()
+	if not status then return false, err end
 	conn:settimeout(0)
 
-	return setmetatable({
+	local meta = {
 		socket = conn,
 		host = host,
 		port = port,
+		params = params,
 		start = socket.gettime(),
 		ping = {
 			good = 0,
@@ -52,8 +55,15 @@ function client.new(host, port, params)
 		synced = false,
 		config = {},
 		hooks = {},
+		commands = {},
 		start = socket.gettime(),
-	}, client)
+	}
+
+	return setmetatable(meta, client)
+end
+
+function client:__tostring()
+	return ("lumble.client[\"%s:%d\"]"):format(self.host, self.port)
 end
 
 local function argerr(arg, num, expected)
@@ -124,6 +134,9 @@ function client:auth(username, password, tokens)
 	auth:set("username", username)
 	auth:set("password", password or "")
 
+	self.username = username
+	self.password = password
+
 	for k,v in pairs(tokens or {}) do
 		auth:add("tokens", v)
 	end
@@ -181,8 +194,8 @@ function client:update()
 		elseif err == "wantread" or err == "timeout" then
 			return true
 		else
-			log.error("receive error %q", err)
-			return false
+			log.error("connection error %q", err)
+			return false, err
 		end
 	end
 
@@ -198,17 +211,17 @@ function client:onPacket(packet)
 	local func = self["on" .. name]
 
 	if not func then
-		log.warn("Unimplemented %s", packet)
+		log.warn("unimplemented %s", packet)
 		return
 	end
 
-	log.trace("Received %s", packet)
+	log.trace("received %s", packet)
 	func(self, packet)
 end
 
 function client:onVersion(packet)
-	log.info("Version: %s", packet.release)
-	log.info("System : %s", packet.os_version)
+	log.info("version: %s", packet.release)
+	log.info("system : %s", packet.os_version)
 end
 
 function client:onUDPTunnel(data)
@@ -224,12 +237,12 @@ function client:onPing(packet)
 	local ms = (time - packet.timestamp)
 	self.ping.tcp_packets = self.ping.tcp_packets + 1
 	self.ping.tcp_ping_avg = ms
-	log.trace("Ping: %0.2f", ms)
+	log.trace("ping: %0.2f", ms)
 	self:hookCall("OnPing")
 end
 
 function client:onReject(packet)
-	log.warn("Reject [%s][%s]", packet.type.name, packet.reason)
+	log.warn("rejected [%s][%s]", packet.type, packet.reason)
 	self:hookCall("OnReject")
 end
 
@@ -239,7 +252,7 @@ function client:onServerSync(packet)
 	self.session = packet.session
 	self.max_bandwith = packet.max_bandwith
 	self.me = self.users[self.session]
-	log.info("Welcome Message: %s", packet.welcome_text:stripHTML())
+	log.info("message: %s", packet.welcome_text:stripHTML())
 	self:hookCall("OnServerSync", self.me)
 end
 
@@ -267,23 +280,20 @@ function client:onChannelState(packet)
 end
 
 function client:onUserRemove(packet)
-	local user = self.users[packet.session]
-
-	-- Sometimes we get a phantom remove?
-	if not user then return end
-
-	local actor = packet.actor and self.users[packet.actor] or nil
+	local user = packet.session and self.users[packet.session]
+	local actor = packet.actor and self.users[packet.actor]
 
 	local message = "disconnected"
 	
-	if actor then
+	if user and actor then
 		local reason = (packet.reason and packet.reason ~= "") and packet.reason or "No reason given"
 		message = (packet.ban and "banned by %s (%q)" or "kicked by %s (%q)"):format(actor, reason)
+	else
+		self.users[packet.session] = nil
 	end
 
-	log.info("%s %s", user, message)
+	log[user == self.me and "warn" or "info"]("%s %s", user, message)
 	self:hookCall("OnUserRemove", event.new(self, packet.proto, true))
-	self.users[packet.session] = nil
 end
 
 function client:onUserState(packet)
@@ -317,7 +327,34 @@ function client:onBanList(packet)
 end
 
 function client:onTextMessage(packet)
-	self:hookCall("OnTextMessage", event.new(self, packet.proto, true))
+	local event = event.new(self, packet.proto, true)
+
+	local msg = event.message
+
+	if msg[1] == "!" then
+		local user = event.actor
+		local args = msg:stripHTML():unescapeHTML():parseArgs()
+		local cmd = table.remove(args,1)
+		local info = self.commands[cmd:lower():sub(2)]
+		if info then
+			if info.master and not user:isMaster() then
+				log.warn("%s: %s (PERMISSION DENIED)", user, msg)
+				user:message("permission denied: %s", cmd)
+			else
+				local suc, err = pcall(info.callback, user, cmd, args, msg)
+				if not suc then
+					log.error("%s: %s (%q)", user, msg, err)
+					user:message("<b>%s</b> is currently <i>broken..</i>", cmd)
+				end
+			end
+		else
+			log.info("%s: %s (unknown Command)", user, msg)
+			user:message("unknown command: <b>%s</b>", cmd)
+		end
+		return
+	end
+
+	self:hookCall("OnTextMessage", event)
 end
 
 function client:onPermissionDenied(packet)
@@ -346,7 +383,7 @@ function client:onContextAction(packet)
 end
 
 function client:onUserList(packet)
-	self:hookCall("OnUserList")
+	self:hookCall("OnUserList", event.new(self, packet.proto, true))
 end
 
 function client:onVoiceTarget(packet)
@@ -424,6 +461,19 @@ function client:getChannel(index)
 	else
 		return self.channels[0]
 	end
+end
+
+function client:requestUserList()
+	local msg = packet.new("UserList")
+	self:send(msg)
+end
+
+function client:addCommand(cmd, callback, master)
+	self.commands = self.commands or {}
+	self.commands[cmd] = {
+		callback = callback,
+		master = master,
+	}
 end
 
 return client
