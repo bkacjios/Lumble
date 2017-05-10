@@ -1,3 +1,15 @@
+function math.roll(dice, num)
+	local results = {}
+	local total = 0
+
+	for i=1, num or 1 do
+		results[i] = math.random(1, dice)
+		total = total + results[i]
+	end
+
+	return results, total
+end
+
 function math.difftime(t1,t2)
 	local d1 = os.date('*t',t1)
 	local d2 = os.date('*t',t2)
@@ -52,7 +64,7 @@ function math.randombias(min, max, bias, influence)
 	return rnd * (1 - mix) + bias * mix
 end
 
-function math.rounddec(num, numDecimalPlaces)
-	local mult = math.pow(10, (numDecimalPlaces or 0))
+function math.round(num, places)
+	local mult = math.pow(10, (places or 0))
 	return math.floor(num * mult + 0.5) / mult
 end

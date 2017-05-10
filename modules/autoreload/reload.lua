@@ -330,10 +330,10 @@ local function match_objects(objects, old_module, map, globals)
 				local current = { table.unpack(item, 2) }
 				error ( "Not a table : " .. table.concat(current, ",") )
 			end
-			if map[obj] and map[obj] ~= old_one then
+			--[[if map[obj] and map[obj] ~= old_one then
 				local current = { table.unpack(item, 2) }
 				error ( "Ambiguity table : " .. table.concat(current, ",") )
-			end
+			end]]
 			map[obj] = old_one
 			if print then print("MATCH", old_one, table.unpack(item,2)) end
 		end
@@ -374,12 +374,13 @@ local function match_upvalues(map, upvalues)
 						index = old_index,
 						oldid = debug.upvalueid(old_one, old_index),
 					}
-				elseif old_index then
+				end
+				--[[if old_index then
 					local oldid = debug.upvalueid(old_one, old_index)
 					if oldid ~= upvalues[id].oldid then
 						error (string.format("Ambiguity upvalue : %s .%s",tostring(new_one),name))
 					end
-				end
+				end]]
 				i = i + 1
 			end
 		end

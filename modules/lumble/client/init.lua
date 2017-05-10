@@ -15,8 +15,6 @@ local ssl = require("ssl")
 local bit = require("bit")
 local log = require("log")
 
-log.level = "debug"
-
 require("extensions.string")
 
 function client.new(host, port, params)
@@ -35,7 +33,6 @@ function client.new(host, port, params)
 		host = host,
 		port = port,
 		params = params,
-		start = socket.gettime(),
 		ping = {
 			good = 0,
 			late = 0,
@@ -53,7 +50,14 @@ function client.new(host, port, params)
 		users = {},
 		permissions = {},
 		synced = false,
-		config = {},
+		config = {
+			max_bandwidth = 0,
+			welcome_text = "",
+			allow_html = false,
+			message_length = 0,
+			image_message_length = 0,
+			max_users = 0,
+		},
 		hooks = {},
 		commands = {},
 		start = socket.gettime(),
@@ -250,7 +254,7 @@ function client:onServerSync(packet)
 	self.synced = true
 	self.permissions[0] = packet.permissions
 	self.session = packet.session
-	self.max_bandwith = packet.max_bandwith
+	self.config.max_bandwidth = packet.max_bandwidth
 	self.me = self.users[self.session]
 	log.info("message: %s", packet.welcome_text:stripHTML())
 	self:hookCall("OnServerSync", self.me)
@@ -268,13 +272,8 @@ function client:onChannelState(packet)
 			self:hookCall("OnChannelCreated", event.new(self, packet.proto))
 		end
 	else
-		local channel = self.channel[packet.channel_id]
-		for desc, value in packet:list() do
-			local name = desc.name
-			if channel[name] ~= value then
-				channel[name] = value
-			end
-		end
+		local channel = self.channels[packet.channel_id]
+		channel:update(packet)
 	end
 	self:hookCall("OnChannelState", event.new(self, packet.proto))
 end
@@ -341,7 +340,7 @@ function client:onTextMessage(packet)
 				log.warn("%s: %s (PERMISSION DENIED)", user, msg)
 				user:message("permission denied: %s", cmd)
 			else
-				local suc, err = pcall(info.callback, user, cmd, args, msg)
+				local suc, err = pcall(info.callback, self, user, cmd, args, msg)
 				if not suc then
 					log.error("%s: %s (%q)", user, msg, err)
 					user:message("<b>%s</b> is currently <i>broken..</i>", cmd)
@@ -417,9 +416,9 @@ function client:onRequestBlob(packet)
 end
 
 function client:onServerConfig(packet)
-	self.config.allow_html = packet.allow_html
-	self.config.message_length = packet.message_length
-	self.config.image_message_length = packet.image_message_length
+	for desc, value in packet:list() do
+		self.config[desc.name] = value
+	end
 	self:hookCall("OnServerConfig", self.config)
 end
 
@@ -468,12 +467,47 @@ function client:requestUserList()
 	self:send(msg)
 end
 
-function client:addCommand(cmd, callback, master)
+local COMMAND = {}
+COMMAND.__index = COMMAND
+
+function COMMAND:setHelp(text, ...)
+	self.help = text:format(...)
+	return self
+end
+
+function COMMAND:setUsage(text, ...)
+	self.usage = text:format(...)
+	return self
+end
+
+function COMMAND:setMaster()
+	self.master = true
+	return self
+end
+
+function COMMAND:alias(name)
+	self.client.commands[name] = setmetatable({
+		callback = self.callback,
+		usage = self.usage,
+		help = self.help,
+		master = self.master,
+		cmd = self.cmd,
+	}, COMMAND)
+	return self
+end
+
+function client:addCommand(cmd, callback)
 	self.commands = self.commands or {}
-	self.commands[cmd] = {
+	self.commands[cmd] = setmetatable({
 		callback = callback,
-		master = master,
-	}
+		client = self,
+		cmd = cmd,
+	}, COMMAND)
+	return self.commands[cmd]
+end
+
+function client:getCommands()
+	return self.commands
 end
 
 return client

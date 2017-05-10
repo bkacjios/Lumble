@@ -13,7 +13,7 @@ function mumble.connect(host, port, params)
 	local client, err = client.new(host, port, params)
 
 	if not client then
-		table.insert(mumble.reconnect, {host = host, port = port, params = info.params, time = os.time() + 1})
+		table.insert(mumble.reconnect, {host = host, port = port, params = params, time = os.time() + 1})
 		return false, err
 	end
 
@@ -23,6 +23,10 @@ function mumble.connect(host, port, params)
 	reload.reload("scripts")
 
 	return client
+end
+
+function mumble.getClients()
+	return mumble.clients
 end
 
 function mumble.getClient(host, port, params)

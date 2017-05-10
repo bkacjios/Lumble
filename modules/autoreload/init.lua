@@ -22,10 +22,9 @@ function autoreload.poll()
 			f:close()
 
 			if info.crc ~= crc then
-				info.crc = crc
-				
 				local status, err = reload.reload(module)
 				if status then
+					info.crc = crc
 					log.debug("%s[%q] reloaded: %s", module, info.file, crc)
 				else
 					log.error("%s[%q] reload failed: %s", module, info.file, err)
@@ -46,7 +45,7 @@ function autoreload.getPackageFile(module)
 end
 
 function autoreload.watch(module)
-	if module == "autoreload" then return end
+	if module == "autoreload" or module == "autoreload.reload" then return end
 
 	local file = autoreload.getPackageFile(module)
 

@@ -75,7 +75,7 @@ function user:getChannel()
 end
 
 function user:getSession()
-	return user.session
+	return self.session
 end
 
 function user:getName()
@@ -83,7 +83,7 @@ function user:getName()
 end
 
 function user:getID()
-	return self.user_id
+	return self.user_id or 0
 end
 
 function user:isMute()
@@ -144,6 +144,11 @@ end
 
 function user:getStats()
 	return self.stats
+end
+
+function user:isMaster()
+	-- Allow the superuser or masters to control the bot
+	return self:getName() == config.superuser or config.masters[self:getHash()]
 end
 
 return user

@@ -15,7 +15,7 @@ return {
 	superuser = "SuperUser",
 
 	-- What the bot will call its masters
-	mastername = "senpai",
+	mastername = "master",
 
 	-- Users who have advanced command access
 	masters = {

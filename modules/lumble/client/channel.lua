@@ -8,11 +8,18 @@ function channel.new(client, packet)
 		client = client
 	}, channel)
 
-	for desc, value in packet:list() do
-		channel[desc.name] = value
-	end
+	channel:update(packet)
 
 	return channel
+end
+
+function channel:update(packet)
+	for desc, value in packet:list() do
+		local name = desc.name
+		if self[name] ~= value then
+			self[name] = value
+		end
+	end
 end
 
 function channel:__tostring()
@@ -66,7 +73,7 @@ end
 function channel:getChildren()
 	local children = {}
 	for id, channel in pairs(self.client.channels) do
-		if self == channel.parent then
+		if self.channel_id == channel.parent then
 			children[channel.channel_id] = channel
 		end
 	end
@@ -81,10 +88,10 @@ function channel:send(packet)
 	return self.client:send(packet)
 end
 
-function channel:message(text)
+function channel:message(text, ...)
 	local msg = packet.new("TextMessage")
 	msg:add("channel_id", self.channel_id)
-	msg:set("message", text)
+	msg:set("message", text:format(...))
 	self:send(msg)
 end
 
