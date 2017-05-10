@@ -17,18 +17,23 @@ function autoreload.poll()
 		if info.changed ~= changed then
 			info.changed = changed
 
-			local f = io.open(info.file, "rb")
-			local crc = f:crc32()
-			f:close()
+			local f, err = io.open(info.file, "rb")
 
-			if info.crc ~= crc then
-				local status, err = reload.reload(module)
-				if status then
-					info.crc = crc
-					log.debug("%s[%q] reloaded: %s", module, info.file, crc)
-				else
-					log.error("%s[%q] reload failed: %s", module, info.file, err)
+			if f then
+				local crc = f:crc32()
+				f:close()
+
+				if info.crc ~= crc then
+					local status, err = reload.reload(module)
+					if status then
+						info.crc = crc
+						log.debug("%s[%q] reloaded: %s", module, info.file, crc)
+					else
+						log.error("%s[%q] reload failed: %s", module, info.file, err)
+					end
 				end
+			else
+				log.warn("%s[%q] %s", module, info.file, err)
 			end
 		end
 	end
@@ -39,7 +44,10 @@ function autoreload.getPackageFile(module)
 
 	for file in string.gmatch(package.path:gsub("?", module), "([^;]+)") do
 		if lfs.attributes(file, "mode") == "file" then
-			return file
+			local f = io.open(file, "rb")
+			local crc = f:crc32()
+			f:close()
+			return file, crc
 		end
 	end
 end
@@ -47,7 +55,7 @@ end
 function autoreload.watch(module)
 	if module == "autoreload" or module == "autoreload.reload" then return end
 
-	local file = autoreload.getPackageFile(module)
+	local file, crc = autoreload.getPackageFile(module)
 
 	-- log.warn("lua module '".. module .. "' not found: skipping, probably C module")
 	if not file then return end
@@ -55,10 +63,6 @@ function autoreload.watch(module)
 	if autoreload.monitoring[module] then return end
 
 	log.trace("watching %s[%q]", module, file)
-
-	local f = io.open(file, "rb")
-	local crc = f:crc32()
-	f:close()
 
 	autoreload.monitoring[module] = {
 		file = file,

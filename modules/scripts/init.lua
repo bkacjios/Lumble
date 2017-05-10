@@ -1,6 +1,5 @@
 local afk = require("scripts.afk")
 local lua = require("scripts.lua")
-local cmd = require("scripts.cmd")
 local mumble = require("lumble")
 
 local params = {
