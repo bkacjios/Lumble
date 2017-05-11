@@ -22,17 +22,18 @@ end
 function concommand.Alias(name, alias)
 	local original = concommand.commands[name]
 	concommand.commands[alias] = {
-		name = alias,
+		name = name,
 		callback = original.callback,
 		help = original.help,
-		alias = true
 	}
 end
 
 concommand.Add("help", function(cmd, args)
 	print("Command List")
-	for _,cmd in pairs(concommand.commands) do
-		print(("> %s"):format(cmd.name))
+	for name, cmd in pairs(concommand.commands) do
+		if name == cmd.name then
+			print(("> %-12s"):format(cmd.name) .. (cmd.help and (" - " .. cmd.help) or ""))
+		end
 	end
 end, "Display a list of all commands")
 concommand.Alias("help", "commands")
@@ -59,13 +60,15 @@ concommand.Add("status", function(cmd, args)
 			local users = client:getUsers()
 			local longest = longestName(users)
 
-			print(("# %2s %7s %-".. #longest .."s %-8s"):format("id", "session", "name", "channel"))
+			print(("# %2s %7s %-".. #longest .."s %s"):format("id", "session", "name", "channel"))
 			for k, user in UserPairs(users) do
-				print(("# %2s %7s %-".. #longest .."s %-8s"):format(user:getID(), user:getSession(), user:getName(), user:getChannel()))
+				local channel = user:getChannel()
+				local channel_format = ("%-3d[%s]"):format(channel:getID(), channel:getName():ellipse(24))
+				print(("# %2s %7s %-".. #longest .."s %-8s"):format(user:getID(), user:getSession(), user:getName(), channel_format))
 			end
 		end
 	end
-end)
+end, "Show server statuses")
 
 local function printTree(branch, tabs)
 	tabs = tabs or 0
@@ -87,6 +90,20 @@ concommand.Add("channels", function(cmd, args)
 		end
 	end
 end, "Display a list of all channels")
+
+concommand.Add("disconnect", function(cmd, args)
+	for host, clients in pairs(mumble.clients) do
+		for port, client in pairs(clients) do
+			client.socket:close()
+		end
+	end
+end, "Disconnect from the server")
+
+concommand.Add("exit", function(cmd, args)
+	os.exit()
+end, "Close the program")
+concommand.Alias("exit", "quit")
+concommand.Alias("exit", "quti")
 
 function concommand.loop()
 	local msg = io.read()

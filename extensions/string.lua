@@ -17,7 +17,18 @@ end
 
 function string.trim(self, char)
 	char = char or "%s"
-	return (self:gsub("^"..char.."*(.-)"..char.."*$", "%1" ))
+	return self:gsub("^"..char.."*(.-)"..char.."*$", "%1" )
+end
+
+
+function string.ltrim(s)
+	return s:gsub("^%s*", "")
+end
+
+function string.rtrim(s)
+	local n = #s
+	while n > 0 and s:find("^%s", n) do n = n - 1 end
+	return s:sub(1, n)
 end
 
 function string.AddCommas(str)
@@ -63,7 +74,7 @@ function string.escapeHTML(s)
 end
 
 function string.stripHTML(str)
-	local stripped = gsub(str, "<.->", "")
+	local stripped = gsub(str, "<.-/?>", "")
 	return stripped
 end
 
@@ -93,6 +104,15 @@ end
 
 function string.AOrAn(s)
 	return string.match(s, "^h?[AaEeIiOoUu]") and "an" or "a"
+end
+
+function string.ellipse(s, len)
+	len = math.max(len or 3, 3)
+	if #s >= len then
+		local before = s:sub(1, len - 3):rtrim()
+		return before .. "..."
+	end
+	return s
 end
 
 function string.longest(t)

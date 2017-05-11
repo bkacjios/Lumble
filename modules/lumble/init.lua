@@ -55,7 +55,7 @@ function mumble.update()
 
 	for i, info in pairs(mumble.reconnect) do
 		if info.time <= time then
-			log.debug("attempting reconnect..")
+			log.debug("reconnecting.. (%s attempt)", math.stndrd(info.try))
 			local client, err = mumble.connect(info.host, info.port, info.params)
 			if client then
 				mumble.reconnect[i] = nil

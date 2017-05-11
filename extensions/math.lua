@@ -1,3 +1,5 @@
+math.randomseed(os.time())
+
 function math.roll(dice, num)
 	local results = {}
 	local total = 0
@@ -67,4 +69,13 @@ end
 function math.round(num, places)
 	local mult = math.pow(10, (places or 0))
 	return math.floor(num * mult + 0.5) / mult
+end
+
+local STNDRD_TBL = {"st", "nd", "rd"}
+function math.stndrd(num)
+	num = num % 100
+	if num > 10 and num < 20 then
+		return "th"
+	end
+	return num .. STNDRD_TBL[num % 10] or "th"
 end
