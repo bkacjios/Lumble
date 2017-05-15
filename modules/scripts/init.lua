@@ -10,6 +10,7 @@ local params = {
 }
 
 local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
+if not client then return end
 client:auth("LuaBot")
 
 client:hook("OnServerSync", function(client, me)
@@ -25,7 +26,7 @@ client:addCommand("summon", function(client, user, cmd, args, raw)
 end):setHelp("Bring me to your channel")
 
 client:addCommand("roll", function(client, user, cmd, args, raw)
-	local dice = tonumber(args[1] and args[1]:match("d(%d+)") or args[1]) or 20
+	local dice = tonumber(args[1] and args[1]:match("[Dd](%d+)") or args[1]) or 20
 	local num = tonumber(args[2]) or 1
 
 	local results, total = math.roll(dice, num)
@@ -53,7 +54,6 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 </table>]]):format(num, table.concat(results, ", "), total, math.min(unpack(results)), math.max(unpack(results)))
 	end
 
-	--
 	user:getChannel():message("<p><b>%s</b> rolled a <b><span style=\"color:#aa0000\">D%d</span></b> %s", user:getName(), dice, outcome)
 end):setHelp("Roll a X sided dice X amount of times"):setUsage("<sides> <times>")
 

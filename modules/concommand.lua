@@ -63,7 +63,7 @@ concommand.Add("status", function(cmd, args)
 			print(("# %2s %7s %-".. #longest .."s %s"):format("id", "session", "name", "channel"))
 			for k, user in UserPairs(users) do
 				local channel = user:getChannel()
-				local channel_format = ("%-3d[%s]"):format(channel:getID(), channel:getName():ellipse(24))
+				local channel_format = ("%-3d[%-32s]"):format(channel:getID(), channel:getName():ellipse(32))
 				print(("# %2s %7s %-".. #longest .."s %-8s"):format(user:getID(), user:getSession(), user:getName(), channel_format))
 			end
 		end

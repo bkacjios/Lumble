@@ -9,11 +9,13 @@ local mumble = {
 	reconnect = {},
 }
 
-function mumble.connect(host, port, params)
+function mumble.connect(host, port, params, noretry)
 	local client, err = client.new(host, port, params)
 
 	if not client then
-		table.insert(mumble.reconnect, {host = host, port = port, params = params, time = os.time() + 1})
+		if not noretry then
+			table.insert(mumble.reconnect, {host = host, port = port, params = params, time = os.time() + 1, try = 1})
+		end
 		return false, err
 	end
 
@@ -56,12 +58,12 @@ function mumble.update()
 	for i, info in pairs(mumble.reconnect) do
 		if info.time <= time then
 			log.debug("reconnecting.. (%s attempt)", math.stndrd(info.try))
-			local client, err = mumble.connect(info.host, info.port, info.params)
+			local client, err = mumble.connect(info.host, info.port, info.params, true)
 			if client then
 				mumble.reconnect[i] = nil
 				client:auth(info.username, info.password)
 			else
-				info.time = time + info.try * 5
+				info.time = time + (info.try * 5)
 				info.try = info.try + 1
 			end
 		end

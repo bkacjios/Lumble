@@ -14,16 +14,19 @@ local socket = require("socket")
 local ssl = require("ssl")
 local bit = require("bit")
 local log = require("log")
+local util = require("util")
 
 require("extensions.string")
 
 function client.new(host, port, params)
 	local conn = socket.tcp()
 	conn:settimeout(5)
+
 	local status, err = conn:connect(host, port)
 	if not status then return false, err end
 	conn = ssl.wrap(conn, params)
 	if not conn then return false, err end
+
 	status, err = conn:dohandshake()
 	if not status then return false, err end
 	conn:settimeout(0)
@@ -70,14 +73,6 @@ function client:__tostring()
 	return ("lumble.client[\"%s:%d\"]"):format(self.host, self.port)
 end
 
-local function argerr(arg, num, expected)
-	local typeName = type(arg)
-	if typeName ~= expected then
-		local funcName = debug.getinfo(2, "n").name
-		return error(("bad argument #%d to '%s' %s expected, got %s "):format(num, funcName, expected, typeName), 2)
-	end
-end
-
 function client:isSynced()
 	return self.synced
 end
@@ -91,8 +86,8 @@ function client:hook(name, desc, callback)
 		funcArg = 2
 	end
 
-	argerr(desc, funcArg - 1, "string")
-	argerr(callback, funcArg, "function")
+	util.argerr(desc, funcArg - 1, "string")
+	util.argerr(callback, funcArg, "function")
 
 	self.hooks[name] = self.hooks[name] or {}
 	self.hooks[name][desc] = callback
@@ -196,9 +191,14 @@ function client:update()
 				self:onPacket(packet)
 			end
 		elseif err == "wantread" or err == "timeout" then
+			socket.select({self.socket}, nil, 0)
+			return true
+		elseif err == "wantwrite" then
+			socket.select(nil, {self.socket}, 0)
 			return true
 		else
 			log.error("connection error %q", err)
+			self.socket:close()
 			return false, err
 		end
 	end

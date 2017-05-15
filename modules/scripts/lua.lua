@@ -106,6 +106,8 @@ local function sandbox(user, func)
 		end,
 		me = user,
 		client = user:getClient(),
+		users = user:getClient():getUsers(),
+		channel = user:getChannel(),
 	}, env))
 end
 

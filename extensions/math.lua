@@ -1,11 +1,13 @@
 math.randomseed(os.time())
 
+local pi = require("pi")
+
 function math.roll(dice, num)
 	local results = {}
 	local total = 0
 
 	for i=1, num or 1 do
-		results[i] = math.random(1, dice)
+		results[i] = pi.random(1, dice)
 		total = total + results[i]
 	end
 
@@ -77,5 +79,5 @@ function math.stndrd(num)
 	if num > 10 and num < 20 then
 		return "th"
 	end
-	return num .. STNDRD_TBL[num % 10] or "th"
+	return num .. (STNDRD_TBL[num % 10] or "th")
 end

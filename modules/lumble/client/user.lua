@@ -2,6 +2,7 @@ local user = {}
 user.__index = user
 
 local packet = require("lumble.packet")
+local util = require("util")
 
 function user.new(client, packet)
 	local user = setmetatable({
@@ -17,7 +18,7 @@ function user.new(client, packet)
 end
 
 function user:__tostring()
-	return ("%s[%d][%s]"):format(self.name, self.session, self.user_id == 0 and "Unregistered" or "Registered")
+	return ("%s[%d][%s]"):format(self.name, self.session, self:getID() == 0 and "Unregistered" or "Registered")
 end
 
 function user:updateStats(packet)
@@ -35,6 +36,7 @@ function user:send(packet)
 end
 
 function user:message(text, ...)
+	text = text or ""
 	local msg = packet.new("TextMessage")
 	msg:add("session", self.session)
 	msg:set("message", text:format(...))
@@ -42,6 +44,7 @@ function user:message(text, ...)
 end
 
 function user:kick(reason, ...)
+	reason = reason or ""
 	local msg = packet.new("UserRemove")
 	msg:set("session", self.session)
 	msg:set("reason", reason:format(...))
@@ -49,6 +52,7 @@ function user:kick(reason, ...)
 end
 
 function user:ban(reason, ...)
+	reason = reason or ""
 	local msg = packet.new("UserRemove")
 	msg:set("session", self.session)
 	msg:set("reason", reason:format(...))
@@ -59,7 +63,11 @@ end
 function user:move(channel)
 	local msg = packet.new("UserState")
 	msg:set("session", self.session)
-	msg:set("channel_id", channel:getID())
+	if type(channel) == "string" then
+		msg:set("channel_id", self.client:getChannel(channel):getID())
+	else
+		msg:set("channel_id", channel:getID())
+	end
 	self:send(msg)
 end
 
