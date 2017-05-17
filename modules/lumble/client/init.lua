@@ -19,20 +19,27 @@ local util = require("util")
 require("extensions.string")
 
 function client.new(host, port, params)
-	local conn = socket.tcp()
-	conn:settimeout(5)
+	local tcp = socket.tcp()
+	tcp:settimeout(5)
 
-	local status, err = conn:connect(host, port)
+	local status, err = tcp:connect(host, port)
 	if not status then return false, err end
-	conn = ssl.wrap(conn, params)
-	if not conn then return false, err end
+	tcp = ssl.wrap(tcp, params)
+	if not tcp then return false, err end
 
-	status, err = conn:dohandshake()
+	status, err = tcp:dohandshake()
 	if not status then return false, err end
-	conn:settimeout(0)
+	tcp:settimeout(0)
+
+	local udp = socket.udp()
+	udp:settimeout(0)
+
+	local status, err = udp:setpeername(host, port)
+	if not status then return false, err end
 
 	local meta = {
-		socket = conn,
+		tcp = tcp,
+		udp = udp,
 		host = host,
 		port = port,
 		params = params,
@@ -61,6 +68,11 @@ function client.new(host, port, params)
 			image_message_length = 0,
 			max_users = 0,
 		},
+		crypt = {
+			key = {},
+			client_nonce = {},
+			server_nonce = {},
+		},
 		hooks = {},
 		commands = {},
 		start = socket.gettime(),
@@ -71,6 +83,11 @@ end
 
 function client:__tostring()
 	return ("lumble.client[\"%s:%d\"]"):format(self.host, self.port)
+end
+
+function client:close()
+	self.tcp:close()
+	self.udp:close()
 end
 
 function client:isSynced()
@@ -145,19 +162,25 @@ end
 
 function client:send(packet)
 	log.trace("Send %s to server", packet)
-	return self.socket:send(packet:getRaw())
+	return self.tcp:send(packet:getRaw())
 end
 
 function client:getTime()
 	return socket.gettime() - self.start
 end
 
-function client:doping()
+function client:pingTCP()
 	local ping = packet.new("Ping")
 	ping:set("timestamp", self:getTime() * 1000)
 	ping:set("tcp_packets", self.ping.tcp_packets)
 	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
 	self:send(ping)
+end
+
+function client:pingUDP()
+	local b = buffer()
+	b:writeByte(0x20)
+	b:writeVarInt(self:getTime() * 1000)
 end
 
 local next_ping = socket.gettime() + 5
@@ -167,14 +190,15 @@ function client:update()
 
 	if not next_ping or next_ping <= now then
 		next_ping = now + 5
-		self:doping()
+		self:pingTCP()
+		self:pingUDP()
 	end
 
 	local read = true
 	local err
 
 	while read do
-		read, err = self.socket:receive(6)
+		read, err = self.tcp:receive(6)
 
 		if read then
 			local buff = buffer(read)
@@ -182,23 +206,33 @@ function client:update()
 			local id = buff:readShort()
 			local len = buff:readInt()
 
-			read, err = self.socket:receive(len)
+			read, err = self.tcp:receive(len)
 
 			if id == 1 then
+				local voice = buffer(read)
+
+				local header = voice:readByte()
+
+				local codec = bit.rshift(header, (8 - 3))
+				local target = bit.band(header, bit.lshift(1, 5) - 1)
+
+				local session = voice:readVarInt()
+				local sequence = voice:readVarInt()
+
 				-- Ignore voice data for now..
 			else
 				local packet = packet.new(id, read)
 				self:onPacket(packet)
 			end
-		elseif err == "wantread" or err == "timeout" then
-			socket.select({self.socket}, nil, 0)
+		elseif err == "wantread" then
 			return true
 		elseif err == "wantwrite" then
-			socket.select(nil, {self.socket}, 0)
+			return true
+		elseif err == "timeout" then
 			return true
 		else
 			log.error("connection error %q", err)
-			self.socket:close()
+			self.tcp:close()
 			return false, err
 		end
 	end
@@ -328,11 +362,11 @@ end
 function client:onTextMessage(packet)
 	local event = event.new(self, packet.proto, true)
 
-	local msg = event.message
+	local msg = event.message:stripHTML():unescapeHTML()
 
 	if msg[1] == "!" then
 		local user = event.actor
-		local args = msg:stripHTML():unescapeHTML():parseArgs()
+		local args = msg:parseArgs()
 		local cmd = table.remove(args,1)
 		local info = self.commands[cmd:lower():sub(2)]
 		if info then
@@ -370,6 +404,9 @@ function client:onQueryUsers(packet)
 end
 
 function client:onCryptSetup(packet)
+	for desc, value in packet:list() do
+		self.crypt[desc.name] = string.tohex(value)
+	end
 	self:hookCall("OnCryptSetup")
 end
 

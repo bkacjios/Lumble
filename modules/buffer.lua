@@ -50,7 +50,7 @@ function BUFFER:readLen(len)
 end
 
 function BUFFER:readAll()
-	return self:readLen(#self)
+	return self:readLen(#self - self.position)
 end
 
 function BUFFER:readLine()
@@ -134,6 +134,30 @@ function BUFFER:readInt()
 	return bit.lshift(self:readByte(), 24) + bit.lshift(self:readByte(), 16) + bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
 end
 
+function BUFFER:writeVarInt(int)
+	local bytes = 0
+	while int > 127 do
+		self:writeByte(bit.bor(bit.band(int, 127), 128))
+		bytes = bytes + 1
+		int = bit.rshift(int, 7)
+	end
+	bytes = bytes + 1
+	self:writeByte(bit.band(int, 127))
+	return bytes
+end
+
+function BUFFER:readVarInt(maxBytes)
+	local ret = 0
+	for i=0, maxBytes or 5 do
+		local b = self:readByte()
+		ret = bit.bor(bit.lshift(bit.band(b, 127), (7 * i)), ret)
+		if (bit.band(b, 128) == 0) then
+			break
+		end
+	end
+	return ret
+end
+
 function BUFFER:writeFloat(float)
 	if float == 0 then
 		self:writeByte(0x00)
@@ -211,14 +235,14 @@ function BUFFER:readShort()
 end
 
 function BUFFER:writeString(str)
-	self:writeShort(#str)
+	self:writeVarInt(#str)
 	self:write(str)
 end
 
 function BUFFER:readString()
-	local len = self:readShort() - 1
+	local len = self:readVarInt()
 	local ret = string.sub(self.buffer, self.position, self.position + len)
-	self.position = self.position + len + 1
+	self.position = self.position + len
 	return ret
 end
 

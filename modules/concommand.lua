@@ -94,7 +94,7 @@ end, "Display a list of all channels")
 concommand.Add("disconnect", function(cmd, args)
 	for host, clients in pairs(mumble.clients) do
 		for port, client in pairs(clients) do
-			client.socket:close()
+			client:close()
 		end
 	end
 end, "Disconnect from the server")

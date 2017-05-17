@@ -46,7 +46,7 @@ local permission = {
 }
 
 function permission.getName(id)
-	return permission.name[id] or "INVALID PERMISSION"
+	return permission.name[id] or ("INVALID PERMISSION: " .. id)
 end
 
 function permission.getDefaults()
