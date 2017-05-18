@@ -9,6 +9,8 @@ local packet = require("lumble.packet")
 local proto = require("lumble.proto")
 local event = require("lumble.event")
 
+local opus = require("lumble.opus")
+
 local buffer = require("buffer")
 local socket = require("socket")
 local ssl = require("ssl")
@@ -17,6 +19,13 @@ local log = require("log")
 local util = require("util")
 
 require("extensions.string")
+
+local CHANNELS = 1
+local SAMPLE_RATE = 48000
+local FRAME_DURATION = 10 -- ms
+local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
+local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
+local PCM_LEN = PCM_SIZE / 2
 
 function client.new(host, port, params)
 	local tcp = socket.tcp()
@@ -38,6 +47,7 @@ function client.new(host, port, params)
 	if not status then return false, err end
 
 	local meta = {
+		encoder = opus.Encoder(SAMPLE_RATE, CHANNELS),
 		tcp = tcp,
 		udp = udp,
 		host = host,
@@ -130,9 +140,9 @@ end
 function client:auth(username, password, tokens)
 	local version = packet.new("Version")
 
-	local low, med, high = string.match(string.format("%06d", jit.version_num), "(%d%d)(%d%d)(%d%d)")
+	local major, minor, patch = string.match(string.format("%06d", jit.version_num), "(%d%d)(%d%d)(%d%d)")
 
-	version:set("version", bit.lshift(tonumber(low), 16) + bit.lshift(tonumber(med), 8) + tonumber(high))
+	version:set("version", bit.lshift(tonumber(major), 16) + bit.lshift(tonumber(minor), 8) + tonumber(patch))
 	version:set("release", _VERSION)
 
 	local file = assert(io.popen('uname -s', 'r'))
@@ -213,8 +223,8 @@ function client:update()
 
 				local header = voice:readByte()
 
-				local codec = bit.rshift(header, (8 - 3))
-				local target = bit.band(header, bit.lshift(1, 5) - 1)
+				local codec = bit.rshift(header, 5)
+				local target = bit.band(header, 31)
 
 				local session = voice:readVarInt()
 				local sequence = voice:readVarInt()
@@ -245,8 +255,7 @@ function client:sleep(t)
 end
 
 function client:onPacket(packet)
-	local name = packet:getType()
-	local func = self["on" .. name]
+	local func = self["on" .. packet:getType()]
 
 	if not func then
 		log.warn("unimplemented %s", packet)

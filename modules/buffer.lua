@@ -29,43 +29,44 @@ end
 BUFFER.len = BUFFER.length
 
 function BUFFER:write(str)
-	local before = string.sub(self.buffer, 0, self.position)
+	local before = string.sub(self.buffer, 1, self.position)
 	local after = string.sub(self.buffer, self.position + 1)
 	self.buffer = before .. str .. after
 	self.position = self.position + string.len(str)
 end
 
-function BUFFER:writeByte(byte)
-	self:writeChar(string.char(byte))
-end
-
-function BUFFER:writeChar(char)
-	self:write(char)
-end
-
 function BUFFER:readLen(len)
+	if self.position >= #self then return nil end
+	len = math.max(1, len or 1)
+	len = math.min(len, #self)
 	local ret = string.sub(self.buffer, self.position + 1, self.position + len)
 	self.position = self.position + len
 	return ret
 end
 
 function BUFFER:readAll()
-	return self:readLen(#self - self.position)
+	if self.position >= #self then return nil end
+	return self:readLen(#self - self.position + 1)
 end
 
 function BUFFER:readLine()
+	if self.position >= #self then return nil end
 	local pos = self:seek()
 	local all = self:readAll()
 	self:seek("set", pos)
 
-	local startpos, endpos = all:find(".-[\r?\n]")
+	local startpos, endpos = all:find("\r?\n")
+	local ret
 
-	if not endpos then
-		endpos = #all
+	if startpos and endpos then
+		-- Read until newline, then set position AFTER newline
+		ret = string.sub(all, 1, startpos - 1)
+		self.position = pos + endpos
+	else
+		-- Read until EOF
+		ret = all
+		self.position = pos + #all
 	end
-
-	local ret = string.sub(all, startpos, endpos)
-	self.position = pos + endpos
 	return ret
 end
 
@@ -101,7 +102,7 @@ function BUFFER:read(...)
 			else
 				return error(format("bad argument #%i to 'read' (invalid format)",n))
 			end
-		elseif arg > 0 and self.position < #self then
+		elseif type(arg) == "number" then
 			table.insert(returns, self:readLen(arg))
 		end
 	end
@@ -113,14 +114,17 @@ function BUFFER:read(...)
 	return nil
 end
 
-function BUFFER:readChar()
-	local ret = string.sub(self.buffer, self.position, self.position)
-	self.position = self.position + 1
-	return ret
+function BUFFER:writeByte(...)
+	self:write(string.char(...))
 end
 
-function BUFFER:readByte()
-	return string.byte(self:readLen(1))
+function BUFFER:readChar()
+	return self:readLen(1)
+end
+
+function BUFFER:readByte(len)
+	if self.position >= #self then return nil end
+	return string.byte(self:readLen(len), 1, len)
 end
 
 function BUFFER:writeInt(int)
@@ -131,6 +135,7 @@ function BUFFER:writeInt(int)
 end
 
 function BUFFER:readInt()
+	if self.position >= #self then return nil end
 	return bit.lshift(self:readByte(), 24) + bit.lshift(self:readByte(), 16) + bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
 end
 
@@ -147,6 +152,7 @@ function BUFFER:writeVarInt(int)
 end
 
 function BUFFER:readVarInt(maxBytes)
+	if self.position >= #self then return nil end
 	local ret = 0
 	for i=0, maxBytes or 5 do
 		local b = self:readByte()
@@ -204,6 +210,7 @@ function BUFFER:writeFloat(float)
 end
 
 function BUFFER:readFloat()
+	if self.position >= #self then return nil end
 	local b1, b2, b3, b4 = self:readByte(), self:readByte(), self:readByte(), self:readByte()
 	local exponent = (b1 % 0x80) * 0x02 + math.floor(b2 / 0x80)
 	local mantissa = math.ldexp(((b2 % 0x80) * 0x100 + b3) * 0x100 + b4, -23)
@@ -231,6 +238,7 @@ function BUFFER:writeShort(short)
 end
 
 function BUFFER:readShort()
+	if self.position + 1 > #self then return nil end
 	return bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
 end
 
@@ -240,6 +248,7 @@ function BUFFER:writeString(str)
 end
 
 function BUFFER:readString()
+	if self.position >= #self then return nil end
 	local len = self:readVarInt()
 	local ret = string.sub(self.buffer, self.position, self.position + len)
 	self.position = self.position + len
@@ -247,6 +256,7 @@ function BUFFER:readString()
 end
 
 function BUFFER:next()
+	if self.position >= #self then return nil end
 	local nxt = self.position + 1
 	return string.byte(string.sub(self.buffer, nxt, nxt))
 end
