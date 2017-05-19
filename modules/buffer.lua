@@ -51,23 +51,16 @@ end
 
 function BUFFER:readLine()
 	if self.position >= #self then return nil end
-	local pos = self:seek()
-	local all = self:readAll()
-	self:seek("set", pos)
-
-	local startpos, endpos = all:find("\r?\n")
-	local ret
-
+	local startpos, endpos = self.buffer:find("\r?\n", self.position + 1)
 	if startpos and endpos then
 		-- Read until newline, then set position AFTER newline
-		ret = string.sub(all, 1, startpos - 1)
-		self.position = pos + endpos
+		local ret = self.buffer:sub(self.position + 1, startpos - 1)
+		self.position = endpos
+		return ret
 	else
 		-- Read until EOF
-		ret = all
-		self.position = pos + #all
+		return self:readAll()
 	end
-	return ret
 end
 
 function BUFFER:seek(whence, offset)
@@ -250,19 +243,29 @@ end
 function BUFFER:readString()
 	if self.position >= #self then return nil end
 	local len = self:readVarInt()
-	local ret = string.sub(self.buffer, self.position, self.position + len)
+	local ret = self.buffer:sub(self.position, self.position + len)
 	self.position = self.position + len
 	return ret
+end
+
+function BUFFER:readNullString()
+	local null = self.buffer:find('%z', self.position + 1)
+	if null then
+		local str = self.buffer:sub(self.position + 1, null - 1)
+		self.position = null
+		return str
+	end
 end
 
 function BUFFER:next()
 	if self.position >= #self then return nil end
 	local nxt = self.position + 1
-	return string.byte(string.sub(self.buffer, nxt, nxt))
+	return string.byte(self.buffer:sub(nxt, nxt))
 end
 
-function BUFFER:sendTo(sock)
-	return sock:send(self:getRaw())
+function BUFFER:writeNullString(str)
+	self:write(str)
+	self:writeByte(0x0)
 end
 
 return Buffer
