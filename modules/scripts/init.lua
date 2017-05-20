@@ -57,6 +57,25 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	user:getChannel():message("<p><b>%s</b> rolled a <b><span style=\"color:#aa0000\">D%d</span></b> %s", user:getName(), dice, outcome)
 end):setHelp("Roll a X sided dice X amount of times"):setUsage("<sides> <times>")
 
+client:addCommand("rollstats", function(client, user, cmd, args)
+	local stats = {}
+
+	for i=1,6 do
+		local results, total = math.roll(6, 4)
+
+		local stat = 0
+		table.sort(results, function(a, b) return a > b end)
+
+		for i=1,3 do
+			stat = stat + results[i]
+		end
+
+		table.insert(stats, stat)
+	end
+
+	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#aa0000\">%s</span></b>", user:getName(), table.concat(stats, ", "))
+end)
+
 client:addCommand("help", function(client, user, cmd, args, raw)
 	local debug = args[1] == "user"
 	local message = "<p>Here's a list of commands<br/>"

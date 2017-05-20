@@ -248,6 +248,12 @@ function BUFFER:readString()
 	return ret
 end
 
+function BUFFER:next()
+	if self.position >= #self then return nil end
+	local nxt = self.position + 1
+	return string.byte(self.buffer:sub(nxt, nxt))
+end
+
 function BUFFER:readNullString()
 	local null = self.buffer:find('%z', self.position + 1)
 	if null then
@@ -255,12 +261,6 @@ function BUFFER:readNullString()
 		self.position = null
 		return str
 	end
-end
-
-function BUFFER:next()
-	if self.position >= #self then return nil end
-	local nxt = self.position + 1
-	return string.byte(self.buffer:sub(nxt, nxt))
 end
 
 function BUFFER:writeNullString(str)
