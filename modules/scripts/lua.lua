@@ -102,7 +102,7 @@ local function sandbox(user, func)
 			for k,v in pairs({...}) do
 				table.insert(txts, tostring(v))
 			end
-			user:message(table.concat(txts, ",    "))
+			user:message(table.concat(txts, ", "))
 		end,
 		me = user,
 		client = user:getClient(),

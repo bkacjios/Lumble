@@ -1,6 +1,7 @@
 local afk = require("scripts.afk")
 local lua = require("scripts.lua")
 local mumble = require("lumble")
+local log = require("log")
 
 local params = {
 	mode = "client",
@@ -36,25 +37,29 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	if num > 1 then
 		outcome = ([[<b>x %d</b><table>
   <tr>
-    <td><b>Rolls</b></td>
-    <td>: %s</td>
+    <td><b>Rolls</b></td><td>: %s</td>
   </tr>
   <tr>
-    <td><b>Total</b></td>
-    <td>: %d</td>
+    <td><b>Total</b></td><td>: %d</td>
   </tr>
   <tr>
-    <td><b>Min</b></td>
-    <td>: %d</td>
+    <td><b>Min</b></td><td>: %d</td>
   </tr>
   <tr>
-    <td><b>Max</b></td>
-    <td>: %d</td>
+    <td><b>Max</b></td><td>: %d</td>
   </tr>
 </table>]]):format(num, table.concat(results, ", "), total, math.min(unpack(results)), math.max(unpack(results)))
 	end
 
-	user:getChannel():message("<p><b>%s</b> rolled a <b><span style=\"color:#aa0000\">D%d</span></b> %s", user:getName(), dice, outcome)
+	local message = string.format("<p><b>%s</b> rolled a <b><span style=\"color:#aa0000\">D%d</span></b> %s", user:getName(), dice, outcome)
+
+	log.info(message:stripHTML())
+
+	if user:getName() == "Orange-Tang" then
+		user:message(message)
+	else
+		user:getChannel():message(message)
+	end
 end):setHelp("Roll a X sided dice X amount of times"):setUsage("<sides> <times>")
 
 client:addCommand("rollstats", function(client, user, cmd, args)
@@ -74,7 +79,7 @@ client:addCommand("rollstats", function(client, user, cmd, args)
 	end
 
 	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#aa0000\">%s</span></b>", user:getName(), table.concat(stats, ", "))
-end)
+end):setHelp("Rolls 4 D6, 6 times, and takes the highest 3 values")
 
 client:addCommand("help", function(client, user, cmd, args, raw)
 	local debug = args[1] == "user"
@@ -86,3 +91,10 @@ client:addCommand("help", function(client, user, cmd, args, raw)
 	end
 	user:message(message)
 end):setHelp("Display a list of all commands"):alias("commands"):alias("?")
+
+client:addCommand("about", function(client, user, cmd, args, raw)
+	local message = [[<b>LuaBot</b>
+Created by <a href="https://github.com/Someguynamedpie">Somepotato</a> &amp; <a href="https://github.com/bkacjios">Bkacjios</a><br/><br/>
+<a href="https://github.com/bkacjios/Lumble">https://github.com/bkacjios/Lumble</a>]]
+	user:message(message)
+end, "Get some information about LuaBot")

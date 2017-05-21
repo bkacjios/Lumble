@@ -111,7 +111,7 @@ end
 
 function Encoder:get(name)
 	local id = encoder_set[name]
-	if not id then return error("invalid set name '" .. name .. "'") end
+	if not id then return error("invalid get name '" .. name .. "'") end
 	local ret = opus_int32_ptr()
 	lib.opus_encoder_ctl(self, id, ret)
 	ret = ret[0]

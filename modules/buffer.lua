@@ -4,7 +4,10 @@ local BUFFER = {}
 BUFFER.__index = BUFFER
 
 local function Buffer(str)
-	return setmetatable({buffer = str or "", position = 0}, BUFFER)
+	return setmetatable({
+		buffer = str or "",
+		position = 0
+	}, BUFFER)
 end
 
 function BUFFER:__tostring()

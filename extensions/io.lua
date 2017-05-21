@@ -20,3 +20,20 @@ function FILE:md5()
 	self:seek("set", pos)
 	return md5.tohex(m:finish())
 end
+
+function FILE:readByte(len)
+	len = len or 1
+	return string.byte(self:read(len), 1, len)
+end
+
+function FILE:readChar()
+	return self:read(1)
+end
+
+function FILE:readInt()
+	return bit.lshift(self:readByte(), 24) + bit.lshift(self:readByte(), 16) + bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
+end
+
+function FILE:readShort()
+	return bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
+end

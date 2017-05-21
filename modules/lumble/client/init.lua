@@ -10,6 +10,7 @@ local proto = require("lumble.proto")
 local event = require("lumble.event")
 
 local opus = require("lumble.opus")
+local audio = require("lumble.client.audio")
 
 local buffer = require("buffer")
 local socket = require("socket")
@@ -18,14 +19,12 @@ local bit = require("bit")
 local log = require("log")
 local util = require("util")
 
+local ffi = require("ffi")
+
 require("extensions.string")
 
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
-local FRAME_DURATION = 10 -- ms
-local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
-local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
-local PCM_LEN = PCM_SIZE / 2
 
 function client.new(host, port, params)
 	local tcp = socket.tcp()
@@ -198,6 +197,8 @@ local next_ping = socket.gettime() + 5
 function client:update()
 	local now = socket.gettime()
 
+	--self:streamAudio()
+
 	if not next_ping or next_ping <= now then
 		next_ping = now + 5
 		self:pingTCP()
@@ -229,6 +230,8 @@ function client:update()
 				local session = voice:readVarInt()
 				local sequence = voice:readVarInt()
 
+				--print(#read, codec, target, session, sequence, ("%q"):format(read))
+
 				-- Ignore voice data for now..
 			else
 				local packet = packet.new(id, read)
@@ -248,6 +251,48 @@ function client:update()
 	end
 
 	return false
+end
+
+local CHANNELS = 1
+local SAMPLE_RATE = 48000
+local FRAME_DURATION = 10 -- ms
+local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
+local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
+local PCM_LEN = PCM_SIZE / 2
+
+local wav = assert(io.open("metroid.wav", "rb"))
+wav:seek("set", 44)
+
+local sequence = 1
+local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
+
+encoder:set("vbr", 0)
+encoder:set("bitrate", 48000)
+
+function client:streamAudio()
+	local b = audio.createPacket(4, 0, sequence)
+
+	local PCM = {}
+
+	while #PCM < FRAME_SIZE do
+		table.insert(PCM, wav:readShort())
+	end
+
+	local encoded, len = encoder:encode(PCM, #PCM, FRAME_SIZE, 0x1FFF)
+
+	audio.writeVarInt(b, len)
+	b:write(ffi.string(encoded))
+
+	local len = #b
+
+	b:seek("set", 0)
+
+	b:writeShort(1)
+	b:writeInt(len)
+
+	self.tcp:send(b:getRaw())
+
+	sequence = (sequence + 1) % 0xffff
 end
 
 function client:sleep(t)
