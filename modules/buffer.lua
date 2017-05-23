@@ -14,7 +14,7 @@ local function Buffer(length)
 		length = math.max(length, 0)
 	end
 
-	local size = length or 10
+	local size = length or 32
 
 	local meta = {
 		position = 0,
@@ -49,6 +49,11 @@ end
 function BUFFER:toString(i, j)
 	local offset = i and i - 1 or 0
 	return ffi.string(self.buffer + offset, (j or self.length) - offset)
+end
+
+function BUFFER:clear()
+	ffi.fill(self.buffer, self.length)
+	self.position = 0
 end
 
 function BUFFER:__len()
