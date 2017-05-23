@@ -4,14 +4,6 @@ local ffi = require('ffi')
 local BUFFER = {}
 BUFFER.__index = BUFFER
 
-ffi.cdef[[
-  void *malloc(size_t size);
-  void *realloc(void *ptr, size_t size);
-  void free(void *ptr);
-]]
-
-local C = ffi.os == "Windows" and ffi.load("msvcrt") or ffi.C
-
 local function Buffer(length)
 	local string
 
@@ -19,15 +11,25 @@ local function Buffer(length)
 		string = length
 		length = #string
 	elseif type(length) == "number" then
-		length = math.max(length or 1, 1)
+		length = math.max(length, 0)
 	end
+
+	local size = length or 10
 
 	local meta = {
 		position = 0,
-		length = length or 0,
-		buffer = ffi.cast("unsigned char*", C.malloc(length or 0)),
-		variable = not length,
+		length = size,
 	}
+
+	if not length then
+		meta.dynamic = true
+		meta.capacity = meta.length * 2
+		meta.length = 0
+	else
+		meta.capacity = meta.length
+	end
+
+	meta.buffer = ffi.new('unsigned char[?]', meta.capacity)
 
 	if string then
 		ffi.copy(meta.buffer, string, length)
@@ -36,12 +38,8 @@ local function Buffer(length)
 	return setmetatable(meta, BUFFER)
 end
 
-function BUFFER:__gc()
-	C.free(ffi.gc(self.buffer, nil))
-end
-
 function BUFFER:__tostring()
-	return ("Buffer[%d]"):format(self.length)
+	return ("Buffer[%d/%d]"):format(self.length, self.capacity)
 end
 
 function BUFFER:getBuffer()
@@ -56,30 +54,37 @@ end
 function BUFFER:__len()
 	return self.length
 end
---BUFFER.length = BUFFER.__len
-BUFFER.len = BUFFER.length
+BUFFER.len = BUFFER.__len
 
 function BUFFER:write(str)
 	local len = #str
-	if self.position + len >= self.length then
-		local left = self.length - self.position
 
-		if self.variable then
-			local new_size = self.length + len
+	if self.position + len > self.capacity then
+		if self.dynamic then
+			local pow = 2
+			local mult = (self.length + len) / self.capacity
 
-			self.buffer = ffi.cast("unsigned char*", C.realloc(self.buffer, new_size))
-			if not self.buffer then
-				ffi.C.free(ffi.gc(self.buffer, nil))
-				return error("unable to realloc buffer")
+			if math.ceil(mult) - mult < 0.5 then
+				mult = mult + 1
 			end
-			self.length = new_size
+
+			self.capacity = self.capacity * math.ceil(mult)
+
+			local new = ffi.new('unsigned char[?]', self.capacity)
+			ffi.copy(new, self.buffer, self.length)
+
+			self.buffer = new
 		else
-			len = left
+			len = self.length - self.position
 		end
 	end
 
 	ffi.copy(self.buffer + self.position, str, len)
 	self.position = self.position + len
+
+	if self.dynamic then
+		self.length = self.length + len
+	end
 end
 
 function BUFFER:readLen(len)
