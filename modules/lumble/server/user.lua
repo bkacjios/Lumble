@@ -34,7 +34,7 @@ end
 
 function user:send(packet)
 	log.trace("Send %s to %s", packet, self)
-	return self.socket:send(packet:getRaw())
+	return self.socket:send(packet:toString())
 end
 
 function user:onPacket(packet)

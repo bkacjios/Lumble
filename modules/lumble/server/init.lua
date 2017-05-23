@@ -140,7 +140,7 @@ function server:onUserConnect(peer)
 		local state = packet.new("Reject")
 		state:set("reason", "A certificate is required to connect to this server")
 		state:set("type", proto.REJECT_REJECTTYPE_NOCERTIFICATE_ENUM)
-		peer:send(state:getRaw())
+		peer:send(state:toString())
 		peer:close()
 		return
 	end
@@ -153,7 +153,7 @@ function server:onUserConnect(peer)
 		local state = packet.new("Reject")
 		state:set("reason", ("Server is full (max %d users)"):format(self.config.max_users))
 		state:set("type", proto.REJECT_REJECTTYPE_SERVERFULL_ENUM)
-		peer:send(state:getRaw())
+		peer:send(state:toString())
 		peer:close()
 		return
 	end

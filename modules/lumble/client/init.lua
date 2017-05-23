@@ -171,7 +171,7 @@ end
 
 function client:send(packet)
 	log.trace("Send %s to server", packet)
-	return self.tcp:send(packet:getRaw())
+	return self.tcp:send(packet:toString())
 end
 
 function client:getTime()
@@ -290,7 +290,7 @@ function client:streamAudio()
 	b:writeShort(1)
 	b:writeInt(len)
 
-	self.tcp:send(b:getRaw())
+	self.tcp:send(b:toString())
 
 	sequence = (sequence + 1) % 0xffff
 end

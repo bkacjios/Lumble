@@ -61,13 +61,13 @@ function packet:serialize()
 	return self.proto:SerializeToString()
 end
 
-function packet:getRaw()
+function packet:toString()
 	local buff = buffer()
 	buff:writeShort(self:getID())
 	local data = self:serialize()
 	buff:writeInt(#data)
 	buff:write(data)
-	return buff:getRaw()
+	return buff:toString()
 end
 
 return packet

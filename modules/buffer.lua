@@ -1,63 +1,107 @@
 local bit = require("bit")
+local ffi = require('ffi')
 
 local BUFFER = {}
 BUFFER.__index = BUFFER
 
-local function Buffer(str)
-	return setmetatable({
-		buffer = str or "",
-		position = 0
-	}, BUFFER)
+ffi.cdef[[
+  void *malloc(size_t size);
+  void *realloc(void *ptr, size_t size);
+  void free(void *ptr);
+]]
+
+local C = ffi.os == "Windows" and ffi.load("msvcrt") or ffi.C
+
+local function Buffer(length)
+	local string
+
+	if type(length) == "string" then
+		string = length
+		length = #string
+	elseif type(length) == "number" then
+		length = math.max(length or 1, 1)
+	end
+
+	local meta = {
+		position = 0,
+		length = length or 0,
+		buffer = ffi.cast("unsigned char*", C.malloc(length or 0)),
+		variable = not length,
+	}
+
+	if string then
+		ffi.copy(meta.buffer, string, length)
+	end
+
+	return setmetatable(meta, BUFFER)
+end
+
+function BUFFER:__gc()
+	C.free(ffi.gc(self.buffer, nil))
 end
 
 function BUFFER:__tostring()
-	return ("Buffer[%d]"):format(#self, self.buffer)
+	return ("Buffer[%d]"):format(self.length)
 end
 
 function BUFFER:getBuffer()
 	return self.buffer
 end
 
-function BUFFER:getRaw()
-	return self.buffer
+function BUFFER:toString(i, j)
+	local offset = i and i - 1 or 0
+	return ffi.string(self.buffer + offset, (j or self.length) - offset)
 end
 
 function BUFFER:__len()
-	return string.len(self.buffer)
+	return self.length
 end
-
-function BUFFER:length()
-	return string.len(self.buffer)
-end
+--BUFFER.length = BUFFER.__len
 BUFFER.len = BUFFER.length
 
 function BUFFER:write(str)
-	local before = string.sub(self.buffer, 1, self.position)
-	local after = string.sub(self.buffer, self.position + 1)
-	self.buffer = before .. str .. after
-	self.position = self.position + string.len(str)
+	local len = #str
+	if self.position + len >= self.length then
+		local left = self.length - self.position
+
+		if self.variable then
+			local new_size = self.length + len
+
+			self.buffer = ffi.cast("unsigned char*", C.realloc(self.buffer, new_size))
+			if not self.buffer then
+				ffi.C.free(ffi.gc(self.buffer, nil))
+				return error("unable to realloc buffer")
+			end
+			self.length = new_size
+		else
+			len = left
+		end
+	end
+
+	ffi.copy(self.buffer + self.position, str, len)
+	self.position = self.position + len
 end
 
 function BUFFER:readLen(len)
-	if self.position >= #self then return nil end
 	len = math.max(1, len or 1)
-	len = math.min(len, #self)
-	local ret = string.sub(self.buffer, self.position + 1, self.position + len)
+	len = math.min(len, self.length)
+	local ret = ffi.string(self.buffer + self.position, len)
 	self.position = self.position + len
 	return ret
 end
 
 function BUFFER:readAll()
-	if self.position >= #self then return nil end
-	return self:readLen(#self - self.position + 1)
+	if self.position >= self.length then return nil end
+	local ret = self:readLen(self.length - self.position)
+	self.position = self.length
+	return ret
 end
 
 function BUFFER:readLine()
-	if self.position >= #self then return nil end
-	local startpos, endpos = self.buffer:find("\r?\n", self.position + 1)
+	if self.position >= self.length then return nil end
+	local startpos, endpos = self:toString():find("\r?\n", self.position + 1)
 	if startpos and endpos then
-		-- Read until newline, then set position AFTER newline
-		local ret = self.buffer:sub(self.position + 1, startpos - 1)
+		local ret = self:readLen(startpos - 1 - self.position)
 		self.position = endpos
 		return ret
 	else
@@ -74,7 +118,7 @@ function BUFFER:seek(whence, offset)
 	elseif whence == "set" then
 		self.position = offset
 	elseif whence == "end" then
-		self.position = #self + offset
+		self.position = self.length + offset
 	end
 	return self.position
 end
@@ -119,7 +163,7 @@ function BUFFER:readChar()
 end
 
 function BUFFER:readByte(len)
-	if self.position >= #self then return nil end
+	if self.position >= self.length then return nil end
 	return string.byte(self:readLen(len), 1, len)
 end
 
@@ -131,7 +175,7 @@ function BUFFER:writeInt(int)
 end
 
 function BUFFER:readInt()
-	if self.position >= #self then return nil end
+	if self.position >= self.length then return nil end
 	return bit.lshift(self:readByte(), 24) + bit.lshift(self:readByte(), 16) + bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
 end
 
@@ -148,7 +192,7 @@ function BUFFER:writeVarInt(int)
 end
 
 function BUFFER:readVarInt(maxBytes)
-	if self.position >= #self then return nil end
+	if self.position >= self.length then return nil end
 	local ret = 0
 	for i=0, maxBytes or 5 do
 		local b = self:readByte()
@@ -206,7 +250,7 @@ function BUFFER:writeFloat(float)
 end
 
 function BUFFER:readFloat()
-	if self.position >= #self then return nil end
+	if self.position >= self.length then return nil end
 	local b1, b2, b3, b4 = self:readByte(), self:readByte(), self:readByte(), self:readByte()
 	local exponent = (b1 % 0x80) * 0x02 + math.floor(b2 / 0x80)
 	local mantissa = math.ldexp(((b2 % 0x80) * 0x100 + b3) * 0x100 + b4, -23)
@@ -234,7 +278,7 @@ function BUFFER:writeShort(short)
 end
 
 function BUFFER:readShort()
-	if self.position + 1 > #self then return nil end
+	if self.position + 1 > self.length then return nil end
 	return bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
 end
 
@@ -244,25 +288,21 @@ function BUFFER:writeString(str)
 end
 
 function BUFFER:readString()
-	if self.position >= #self then return nil end
+	if self.position >= self.length then return nil end
 	local len = self:readVarInt()
-	local ret = self.buffer:sub(self.position, self.position + len)
-	self.position = self.position + len
-	return ret
+	return self:read(len)
 end
 
 function BUFFER:next()
-	if self.position >= #self then return nil end
+	if self.position >= self.length then return nil end
 	local nxt = self.position + 1
 	return string.byte(self.buffer:sub(nxt, nxt))
 end
 
 function BUFFER:readNullString()
-	local null = self.buffer:find('%z', self.position + 1)
+	local null = self:toString():find('%z', self.position + 1)
 	if null then
-		local str = self.buffer:sub(self.position + 1, null - 1)
-		self.position = null
-		return str
+		return self:readLen(null - self.position)
 	end
 end
 
