@@ -89,7 +89,7 @@ end
 
 function BUFFER:readLen(len)
 	len = math.max(1, len or 1)
-	len = math.min(len, self.length)
+	len = math.min(self.length - self.position, len)
 	local ret = ffi.string(self.buffer + self.position, len)
 	self.position = self.position + len
 	return ret
