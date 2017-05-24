@@ -9,6 +9,7 @@ local afk = {}
 function afk.checkStats(client, event)
 	local user = event.user
 
+	if user ~= client.me then return end
 	if user:getName() == "AIArena" then return end
 
 	local root = client:getChannel():getName()
@@ -38,9 +39,7 @@ end
 
 function afk.queryUsers(client)
 	for k,user in pairs(client:getUsers()) do
-		if user ~= client.me then
-			user:requestStats()
-		end
+		user:requestStats()
 	end
 end
 

@@ -2,7 +2,6 @@ local bit = require("bit")
 local ffi = require('ffi')
 
 local BUFFER = {}
-BUFFER.__index = BUFFER
 
 local function Buffer(length)
 	local string
@@ -44,6 +43,14 @@ end
 
 function BUFFER:getBuffer()
 	return self.buffer
+end
+
+function BUFFER:__index(key)
+	if type(key) == "number" then
+		if key < 1 or key > self.length then return error("index out of bounds") end
+		return self.buffer[key - 1]
+	end
+	return BUFFER[key]
 end
 
 function BUFFER:toString(i, j)

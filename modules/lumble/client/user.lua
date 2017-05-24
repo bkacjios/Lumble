@@ -154,6 +154,10 @@ function user:getStats()
 	return self.stats
 end
 
+function user:getStat(stat)
+	return self.stats[stat]
+end
+
 function user:isMaster()
 	-- Allow the superuser or masters to control the bot
 	return self:getName() == config.superuser or config.masters[self:getHash()]

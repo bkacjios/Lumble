@@ -60,11 +60,11 @@ concommand.Add("status", function(cmd, args)
 			local users = client:getUsers()
 			local longest = longestName(users)
 
-			print(("# %2s %7s %-".. #longest .."s %s"):format("id", "session", "name", "channel"))
+			print(("# %2s %7s %-".. #longest .."s %-29s %s"):format("id", "session", "name", "channel", "online"))
 			for k, user in UserPairs(users) do
 				local channel = user:getChannel()
-				local channel_format = ("%-3d[%-32s]"):format(channel:getID(), channel:getName():ellipse(32))
-				print(("# %2s %7s %-".. #longest .."s %-8s"):format(user:getID(), user:getSession(), user:getName(), channel_format))
+				local channel_format = ("%-3d[%-24s]"):format(channel:getID(), channel:getName():ellipse(24))
+				print(("# %2s %7s %-".. #longest .."s %-29s %s"):format(user:getID(), user:getSession(), user:getName(), channel_format, math.SecondsToHuman(user:getStat("onlinesecs"))))
 			end
 		end
 	end
