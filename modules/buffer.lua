@@ -9,6 +9,23 @@ local band = bit.band
 local lshift = bit.lshift
 local rshift = bit.rshift
 
+local byte = string.byte
+local char = string.char
+
+local new = ffi.new
+local fill = ffi.fill
+local copy = ffi.copy
+local string = ffi.string
+
+local min = math.min
+local max = math.max
+local ceil = math.ceil
+local floor = math.floor
+local frexp = math.frexp
+local ldexp = math.ldexp
+
+local insert = table.insert
+
 local function Buffer(length)
 	local string
 
@@ -16,7 +33,7 @@ local function Buffer(length)
 		string = length
 		length = #string
 	elseif type(length) == "number" then
-		length = math.max(length, 0)
+		length = max(length, 0)
 	end
 
 	local size = length or 32
@@ -34,10 +51,10 @@ local function Buffer(length)
 		meta.capacity = meta.length
 	end
 
-	meta.buffer = ffi.new('unsigned char[?]', meta.capacity)
+	meta.buffer = new('unsigned char[?]', meta.capacity)
 
 	if string then
-		ffi.copy(meta.buffer, string, length)
+		copy(meta.buffer, string, length)
 	end
 
 	return setmetatable(meta, BUFFER)
@@ -61,11 +78,11 @@ end
 
 function BUFFER:toString(i, j)
 	local offset = i and i - 1 or 0
-	return ffi.string(self.buffer + offset, (j or self.length) - offset)
+	return string(self.buffer + offset, (j or self.length) - offset)
 end
 
 function BUFFER:clear()
-	ffi.fill(self.buffer, self.length)
+	fill(self.buffer, self.length)
 	self.position = 0
 end
 
@@ -82,21 +99,21 @@ function BUFFER:write(str)
 			local pow = 2
 			local mult = (self.length + len) / self.capacity
 
-			if math.ceil(mult) - mult < 0.5 then
+			if ceil(mult) - mult < 0.5 then
 				mult = mult + 1
 			end
 
-			self.capacity = self.capacity * math.ceil(mult)
+			self.capacity = self.capacity * ceil(mult)
 
-			local new = ffi.new('unsigned char[?]', self.capacity)
-			ffi.copy(new, self.buffer, self.length)
+			local new = new('unsigned char[?]', self.capacity)
+			copy(new, self.buffer, self.length)
 			self.buffer = new
 		else
 			len = self.length - self.position
 		end
 	end
 
-	ffi.copy(self.buffer + self.position, str, len)
+	copy(self.buffer + self.position, str, len)
 	self.position = self.position + len
 
 	if self.dynamic and self.position >= self.length then
@@ -105,9 +122,9 @@ function BUFFER:write(str)
 end
 
 function BUFFER:readLen(len)
-	len = math.max(1, len or 1)
-	len = math.min(self.length - self.position, len)
-	local ret = ffi.string(self.buffer + self.position, len)
+	len = max(1, len or 1)
+	len = min(self.length - self.position, len)
+	local ret = string(self.buffer + self.position, len)
 	self.position = self.position + len
 	return ret
 end
@@ -121,9 +138,9 @@ end
 
 function BUFFER:readLine()
 	if self.position >= self.length then return nil end
-	local startpos, endpos = self:toString():find("\r?\n", self.position + 1)
+	local startpos, endpos = self:toString(self.position + 1):find("\r?\n")
 	if startpos and endpos then
-		local ret = self:readLen(startpos - 1 - self.position)
+		local ret = self:readLen(startpos - 1)
 		self.position = endpos
 		return ret
 	else
@@ -158,14 +175,14 @@ function BUFFER:read(...)
 		local buffer = {}
 		if type(arg) == "string" then
 			if arg:sub(1,2) == "*a" then
-				table.insert(returns, self:readAll())
+				insert(returns, self:readAll())
 			elseif arg:sub(1,2) == "*l" then
-				table.insert(returns, self:readLine())
+				insert(returns, self:readLine())
 			else
 				return error(format("bad argument #%i to 'read' (invalid format)",n))
 			end
 		elseif type(arg) == "number" then
-			table.insert(returns, self:readLen(arg))
+			insert(returns, self:readLen(arg))
 		end
 	end
 
@@ -177,7 +194,7 @@ function BUFFER:read(...)
 end
 
 function BUFFER:writeByte(...)
-	self:write(string.char(...))
+	self:write(char(...))
 end
 BUFFER.writeBytes = BUFFER.writeByte
 
@@ -187,7 +204,7 @@ end
 
 function BUFFER:readByte(len)
 	if self.position >= self.length then return nil end
-	return string.byte(self:readLen(len), 1, len)
+	return byte(self:readLen(len), 1, len)
 end
 BUFFER.readBytes = BUFFER.readByte
 
@@ -289,10 +306,10 @@ function BUFFER:writeFloat(float)
 			sign = 0x80
 			float = -float
 		end
-		local mantissa, exponent = math.frexp(float)
+		local mantissa, exponent = frexp(float)
 		exponent = exponent + 0x7F
 		if exponent <= 0 then
-			mantissa = math.ldexp(mantissa, exponent - 1)
+			mantissa = ldexp(mantissa, exponent - 1)
 			exponent = 0
 		elseif exponent > 0 then
 			if exponent >= 0xFF then
@@ -305,17 +322,17 @@ function BUFFER:writeFloat(float)
 				exponent = exponent - 1
 			end
 		end
-		mantissa = math.floor(math.ldexp(mantissa, 23) + 0.5)
+		mantissa = floor(ldexp(mantissa, 23) + 0.5)
 
-		self:writeByte(sign + math.floor(exponent / 2), (exponent % 2) * 0x80 + math.floor(mantissa / 0x10000), math.floor(mantissa / 0x100) % 0x100, mantissa % 0x100)
+		self:writeByte(sign + floor(exponent / 2), (exponent % 2) * 0x80 + floor(mantissa / 0x10000), floor(mantissa / 0x100) % 0x100, mantissa % 0x100)
 	end
 end
 
 function BUFFER:readFloat()
 	if self.position >= self.length then return nil end
 	local b1, b2, b3, b4 = self:readByte(), self:readByte(), self:readByte(), self:readByte()
-	local exponent = (b1 % 0x80) * 0x02 + math.floor(b2 / 0x80)
-	local mantissa = math.ldexp(((b2 % 0x80) * 0x100 + b3) * 0x100 + b4, -23)
+	local exponent = (b1 % 0x80) * 0x02 + floor(b2 / 0x80)
+	local mantissa = ldexp(((b2 % 0x80) * 0x100 + b3) * 0x100 + b4, -23)
 	if exponent == 0xFF then
 		if mantissa > 0 then
 			return 0 / 0
@@ -331,7 +348,7 @@ function BUFFER:readFloat()
 	if b1 >= 0x80 then
 		mantissa = -mantissa
 	end
-	return math.ldexp(mantissa, exponent - 0x7F)
+	return ldexp(mantissa, exponent - 0x7F)
 end
 
 function BUFFER:writeShort(short)
@@ -356,14 +373,13 @@ end
 
 function BUFFER:next()
 	if self.position >= self.length then return nil end
-	local nxt = self.position + 1
-	return string.byte(self.buffer:sub(nxt, nxt))
+	return byte(self:toString(self.position + 1, 1))
 end
 
 function BUFFER:readNullString()
-	local null = self:toString():find('%z', self.position + 1)
+	local null = self:toString(self.position + 1):find('%z')
 	if null then
-		return self:readLen(null - self.position)
+		return self:readLen(null)
 	end
 end
 

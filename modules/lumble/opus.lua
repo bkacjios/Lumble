@@ -23,6 +23,9 @@ const char *opus_strerror(int error);
 const char *opus_get_version_string(void);
 ]]
 
+OPUS_APPLICATION_VOIP = 2048
+OPUS_APPLICATION_AUDIO = 2049
+
 local encoder_get = {
 	bandwidth = 4009,
 	sample_rate = 4029,
@@ -76,7 +79,7 @@ local Encoder = {}
 Encoder.__index = Encoder
 
 function Encoder:__new(sample_rate, channels, app) -- luacheck:ignore self
-	app = app or 2049
+	app = app or OPUS_APPLICATION_AUDIO
 
 	local err = int_ptr()
 	local state = lib.opus_encoder_create(sample_rate, channels, app, err)

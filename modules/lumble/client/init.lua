@@ -9,7 +9,6 @@ local packet = require("lumble.packet")
 local proto = require("lumble.proto")
 local event = require("lumble.event")
 
-local audio = require("lumble.client.audio")
 local opus = require("lumble.opus")
 
 local buffer = require("buffer")
@@ -265,14 +264,14 @@ local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
 local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
 local PCM_LEN = PCM_SIZE / 2
 
-local wav = assert(io.open("lookingkindofdumb.wav", "rb"))
+local wav = assert(io.open("metroid.wav", "rb"))
 wav:seek("set", 44)
 
 local sequence = 1
 local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 
 encoder:set("vbr", 0)
-encoder:set("bitrate", 48000)
+encoder:set("bitrate", 40000)
 
 local bor = bit.bor
 local lshift = bit.lshift
