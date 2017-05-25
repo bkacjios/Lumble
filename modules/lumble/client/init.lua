@@ -12,7 +12,7 @@ local event = require("lumble.event")
 local audio = require("lumble.client.audio")
 local opus = require("lumble.opus")
 
-local buffer = require("buffer_old")
+local buffer = require("buffer")
 local socket = require("socket")
 local ssl = require("ssl")
 local bit = require("bit")
@@ -197,7 +197,7 @@ local next_ping = socket.gettime() + 5
 function client:update()
 	local now = socket.gettime()
 
-	self:streamAudio()
+	--self:streamAudio()
 
 	if not next_ping or next_ping <= now then
 		next_ping = now + 5
@@ -279,6 +279,8 @@ local lshift = bit.lshift
 
 function client:createAudioPacket(mode, target, seq)
 	local b = buffer()
+	b:writeShort(1) -- Type UDPTunnel
+	b:writeInt(0) -- Size of payload
 	local header = bor(lshift(mode, 5), target)
 	b:writeByte(header)
 	b:writeMumbleVarInt(seq, 2)
@@ -286,25 +288,21 @@ function client:createAudioPacket(mode, target, seq)
 end
 
 function client:streamAudio()
-	local b = audio.createPacket(4, 0, sequence)
+	local b = self:createAudioPacket(4, 0, sequence)
 
 	local PCM = {}
 
-	while #PCM * 2 < PCM_SIZE do
+	while #PCM < FRAME_SIZE do
 		table.insert(PCM, wav:readShort())
 	end
 
-	local encoded, len = encoder:encode(PCM, #PCM, PCM_SIZE, 0x1FFF)
+	local encoded, len = encoder:encode(PCM, #PCM, FRAME_SIZE, 0x1FFF)
 
-	audio.writeVarInt(b, len)
+	b:writeMumbleVarInt(len, 2)
 	b:write(ffi.string(encoded, len))
 
-	b:seek("set", 0)
-
-	b:writeShort(1)
-	b:writeInt(#b)
-
-	print(#b, ("%q"):format(b:toString()))
+	b:seek("set", 2)
+	b:writeInt(#b - 2 - 4) -- Set size of payload
 
 	self.tcp:send(b:toString())
 
