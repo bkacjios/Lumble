@@ -77,7 +77,7 @@ BUFFER.len = BUFFER.__len
 function BUFFER:write(str)
 	local len = #str
 
-	if self.position + len > self.capacity then
+	if self.length + len > self.capacity then
 		if self.dynamic then
 			local pow = 2
 			local mult = (self.length + len) / self.capacity
@@ -90,7 +90,6 @@ function BUFFER:write(str)
 
 			local new = ffi.new('unsigned char[?]', self.capacity)
 			ffi.copy(new, self.buffer, self.length)
-
 			self.buffer = new
 		else
 			len = self.length - self.position
@@ -100,7 +99,7 @@ function BUFFER:write(str)
 	ffi.copy(self.buffer + self.position, str, len)
 	self.position = self.position + len
 
-	if self.dynamic then
+	if self.dynamic and self.position >= self.length then
 		self.length = self.length + len
 	end
 end
@@ -180,6 +179,7 @@ end
 function BUFFER:writeByte(...)
 	self:write(string.char(...))
 end
+BUFFER.writeBytes = BUFFER.writeByte
 
 function BUFFER:readChar()
 	return self:readLen(1)
@@ -189,12 +189,10 @@ function BUFFER:readByte(len)
 	if self.position >= self.length then return nil end
 	return string.byte(self:readLen(len), 1, len)
 end
+BUFFER.readBytes = BUFFER.readByte
 
 function BUFFER:writeInt(int)
-	self:writeByte(band(rshift(int,24),0xFF))
-	self:writeByte(band(rshift(int,16),0xFF))
-	self:writeByte(band(rshift(int,8),0xFF))
-	self:writeByte(band(int,0xFF))
+	self:writeByte(band(rshift(int,24),0xFF), band(rshift(int,16),0xFF), band(rshift(int,8),0xFF), band(int,0xFF))
 end
 
 function BUFFER:readInt()
@@ -216,26 +214,16 @@ function BUFFER:writeMumbleVarInt(int)
 		self:writeByte(int)
 		return 1
 	elseif (int < 0x4000) then
-		self:writeByte(bor(rshift(int, 8), 0x80))
-		self:writeByte(band(int, 0xFF))
+		self:writeByte(bor(rshift(int, 8), 0x80), band(int, 0xFF))
 		return 2
 	elseif (int < 0x200000) then
-		self:writeByte(bor(rshift(int, 16), 0xC0))
-		self:writeByte(band(rshift(int, 8), 0xFF))
-		self:writeByte(band(int, 0xFF))
+		self:writeByte(bor(rshift(int, 16), 0xC0), band(rshift(int, 8), 0xFF), band(int, 0xFF))
 		return 3
 	elseif (int < 0x10000000) then
-		self:writeByte(bor(rshift(int, 24), 0xE0))
-		self:writeByte(band(rshift(int, 16), 0xFF))
-		self:writeByte(band(rshift(int, 8), 0xFF))
-		self:writeByte(band(int, 0xFF))
+		self:writeByte(bor(rshift(int, 24), 0xE0), band(rshift(int, 16), 0xFF), band(rshift(int, 8), 0xFF), band(int, 0xFF))
 		return 4
 	elseif (int < 0x100000000) then
-		self:writeByte(0xF0)
-		self:writeByte(band(rshift(int, 24), 0xFF))
-		self:writeByte(band(rshift(int, 16), 0xFF))
-		self:writeByte(band(rshift(int, 8), 0xFF))
-		self:writeByte(band(int, 0xFF))
+		self:writeByte(0xF0, band(rshift(int, 24), 0xFF), band(rshift(int, 16), 0xFF), band(rshift(int, 8), 0xFF), band(int, 0xFF))
 		return 5
 	end
 end
@@ -292,15 +280,9 @@ end
 
 function BUFFER:writeFloat(float)
 	if float == 0 then
-		self:writeByte(0x00)
-		self:writeByte(0x00)
-		self:writeByte(0x00)
-		self:writeByte(0x00)
+		self:writeByte(0x00, 0x00, 0x00, 0x00)
 	elseif float ~= float then
-		self:writeByte(0xFF)
-		self:writeByte(0xFF)
-		self:writeByte(0xFF)
-		self:writeByte(0xFF)
+		self:writeByte(0xFF, 0xFF, 0xFF, 0xFF)
 	else
 		local sign = 0x00
 		if float < 0 then
@@ -314,10 +296,7 @@ function BUFFER:writeFloat(float)
 			exponent = 0
 		elseif exponent > 0 then
 			if exponent >= 0xFF then
-				self:writeByte(sign + 0x7F)
-				self:writeByte(0x80)
-				self:writeByte(0x00)
-				self:writeByte(0x00)
+				self:writeByte(sign + 0x7F, 0x80, 0x00, 0x00)
 				return
 			elseif exponent == 1 then
 				exponent = 0
@@ -328,10 +307,7 @@ function BUFFER:writeFloat(float)
 		end
 		mantissa = math.floor(math.ldexp(mantissa, 23) + 0.5)
 
-		self:writeByte(sign + math.floor(exponent / 2))
-		self:writeByte((exponent % 2) * 0x80 + math.floor(mantissa / 0x10000))
-		self:writeByte(math.floor(mantissa / 0x100) % 0x100)
-		self:writeByte(mantissa % 0x100)
+		self:writeByte(sign + math.floor(exponent / 2), (exponent % 2) * 0x80 + math.floor(mantissa / 0x10000), math.floor(mantissa / 0x100) % 0x100, mantissa % 0x100)
 	end
 end
 
@@ -359,8 +335,7 @@ function BUFFER:readFloat()
 end
 
 function BUFFER:writeShort(short)
-	self:writeByte(band(rshift(short,8),0xFF))
-	self:writeByte(band(short,0xFF))
+	self:writeByte(band(rshift(short,8),0xFF), band(short,0xFF))
 end
 
 function BUFFER:readShort()

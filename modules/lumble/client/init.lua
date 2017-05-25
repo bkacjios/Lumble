@@ -9,9 +9,10 @@ local packet = require("lumble.packet")
 local proto = require("lumble.proto")
 local event = require("lumble.event")
 
+local audio = require("lumble.client.audio")
 local opus = require("lumble.opus")
 
-local buffer = require("buffer")
+local buffer = require("buffer_old")
 local socket = require("socket")
 local ssl = require("ssl")
 local bit = require("bit")
@@ -196,7 +197,7 @@ local next_ping = socket.gettime() + 5
 function client:update()
 	local now = socket.gettime()
 
-	--self:streamAudio()
+	self:streamAudio()
 
 	if not next_ping or next_ping <= now then
 		next_ping = now + 5
@@ -264,7 +265,7 @@ local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
 local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
 local PCM_LEN = PCM_SIZE / 2
 
-local wav = assert(io.open("metroid.wav", "rb"))
+local wav = assert(io.open("lookingkindofdumb.wav", "rb"))
 wav:seek("set", 44)
 
 local sequence = 1
@@ -273,33 +274,37 @@ local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 encoder:set("vbr", 0)
 encoder:set("bitrate", 48000)
 
-function client:createAudioPacket(mode, target, sequence)
+local bor = bit.bor
+local lshift = bit.lshift
+
+function client:createAudioPacket(mode, target, seq)
 	local b = buffer()
 	local header = bor(lshift(mode, 5), target)
 	b:writeByte(header)
-	b:writeMumbleVarInt(sequence)
+	b:writeMumbleVarInt(seq, 2)
 	return b
 end
 
 function client:streamAudio()
-	local b = self:createAudioPacket(4, 0, sequence)
+	local b = audio.createPacket(4, 0, sequence)
 
 	local PCM = {}
 
-	while #PCM < FRAME_SIZE do
+	while #PCM * 2 < PCM_SIZE do
 		table.insert(PCM, wav:readShort())
 	end
 
-	local encoded, len = encoder:encode(PCM, #PCM, FRAME_SIZE, 0x1FFF)
-	b:writeMumbleVarInt(len)
-	b:write(ffi.string(encoded))
+	local encoded, len = encoder:encode(PCM, #PCM, PCM_SIZE, 0x1FFF)
 
-	local len = #b
+	audio.writeVarInt(b, len)
+	b:write(ffi.string(encoded, len))
 
 	b:seek("set", 0)
 
 	b:writeShort(1)
-	b:writeInt(len)
+	b:writeInt(#b)
+
+	print(#b, ("%q"):format(b:toString()))
 
 	self.tcp:send(b:toString())
 
