@@ -3,6 +3,12 @@ local ffi = require('ffi')
 
 local BUFFER = {}
 
+local bor = bit.bor
+local bnot = bit.bnot
+local band = bit.band
+local lshift = bit.lshift
+local rshift = bit.rshift
+
 local function Buffer(length)
 	local string
 
@@ -185,26 +191,89 @@ function BUFFER:readByte(len)
 end
 
 function BUFFER:writeInt(int)
-	self:writeByte(bit.band(bit.rshift(int,24),0xFF))
-	self:writeByte(bit.band(bit.rshift(int,16),0xFF))
-	self:writeByte(bit.band(bit.rshift(int,8),0xFF))
-	self:writeByte(bit.band(int,0xFF))
+	self:writeByte(band(rshift(int,24),0xFF))
+	self:writeByte(band(rshift(int,16),0xFF))
+	self:writeByte(band(rshift(int,8),0xFF))
+	self:writeByte(band(int,0xFF))
 end
 
 function BUFFER:readInt()
 	if self.position >= self.length then return nil end
-	return bit.lshift(self:readByte(), 24) + bit.lshift(self:readByte(), 16) + bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
+	return bor(lshift(self:readByte(), 24), lshift(self:readByte(), 16), lshift(self:readByte(), 8), lshift(self:readByte(), 0))
+end
+
+function BUFFER:writeMumbleVarInt(int)
+	--[[if (band(int, 0x8000000000000000LL) and bnot(int) < 0x100000000LL) then
+		int = bnot(int)
+		if (int <= 0x3) then
+			self:writeByte(bor(0xFC, int))
+		else
+			self:writeByte(0xF8)
+		end
+	end]]
+
+	if (int < 0x80) then
+		self:writeByte(int)
+		return 1
+	elseif (int < 0x4000) then
+		self:writeByte(bor(rshift(int, 8), 0x80))
+		self:writeByte(band(int, 0xFF))
+		return 2
+	elseif (int < 0x200000) then
+		self:writeByte(bor(rshift(int, 16), 0xC0))
+		self:writeByte(band(rshift(int, 8), 0xFF))
+		self:writeByte(band(int, 0xFF))
+		return 3
+	elseif (int < 0x10000000) then
+		self:writeByte(bor(rshift(int, 24), 0xE0))
+		self:writeByte(band(rshift(int, 16), 0xFF))
+		self:writeByte(band(rshift(int, 8), 0xFF))
+		self:writeByte(band(int, 0xFF))
+		return 4
+	elseif (int < 0x100000000) then
+		self:writeByte(0xF0)
+		self:writeByte(band(rshift(int, 24), 0xFF))
+		self:writeByte(band(rshift(int, 16), 0xFF))
+		self:writeByte(band(rshift(int, 8), 0xFF))
+		self:writeByte(band(int, 0xFF))
+		return 5
+	end
+end
+
+function BUFFER:readMumbleVarInt()
+	local v = self:readByte()
+
+	if band(v, 0x80) == 0x00 then
+		return band(v, 0x7F)
+	elseif band(v, 0xC0) == 0x80 then
+		return bor(lshift(band(v, 0x3F), 8), self:readByte())
+	elseif band(v, 0xF0) == 0xF0 then
+		local c = band(v, 0xFC)
+		if c == 0xF0 then
+			return bor(lshift(self:readByte(), 24), lshift(self:readByte(), 16), lshift(self:readByte(), 8), self:readByte())
+		elseif c == 0xF4 then
+			return bor(lshift(self:readByte(), 56), lshift(self:readByte(), 48), lshift(self:readByte(), 40), lshift(self:readByte(), 32), lshift(self:readByte(), 24), lshift(self:readByte(), 16), lshift(self:readByte(), 8), self:readByte())
+		elseif c == 0xF8 then
+			return bnot(v)
+		elseif c == 0xFC then
+			return bnot(band(v, 0x03))
+		end
+	elseif band(v, 0xF0) == 0xE0 then
+		return bor(lshift(band(v, 0x0F), 24), lshift(self:readByte(), 16), lshift(self:readByte(), 8), self:readByte())
+	elseif band(v, 0xE0) == 0xC0 then
+		return bor(lshift(band(v, 0x1F), 16), lshift(self:readByte(), 8), self:readByte())
+	end
 end
 
 function BUFFER:writeVarInt(int)
 	local bytes = 0
 	while int > 127 do
-		self:writeByte(bit.bor(bit.band(int, 127), 128))
+		self:writeByte(bor(band(int, 127), 128))
 		bytes = bytes + 1
-		int = bit.rshift(int, 7)
+		int = rshift(int, 7)
 	end
 	bytes = bytes + 1
-	self:writeByte(bit.band(int, 127))
+	self:writeByte(band(int, 127))
 	return bytes
 end
 
@@ -213,8 +282,8 @@ function BUFFER:readVarInt(maxBytes)
 	local ret = 0
 	for i=0, maxBytes or 5 do
 		local b = self:readByte()
-		ret = bit.bor(bit.lshift(bit.band(b, 127), (7 * i)), ret)
-		if (bit.band(b, 128) == 0) then
+		ret = bor(lshift(band(b, 127), (7 * i)), ret)
+		if (band(b, 128) == 0) then
 			break
 		end
 	end
@@ -290,13 +359,13 @@ function BUFFER:readFloat()
 end
 
 function BUFFER:writeShort(short)
-	self:writeByte(bit.band(bit.rshift(short,8),0xFF))
-	self:writeByte(bit.band(short,0xFF))
+	self:writeByte(band(rshift(short,8),0xFF))
+	self:writeByte(band(short,0xFF))
 end
 
 function BUFFER:readShort()
 	if self.position + 1 > self.length then return nil end
-	return bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
+	return bor(lshift(self:readByte(), 8), lshift(self:readByte(), 0))
 end
 
 function BUFFER:writeString(str)

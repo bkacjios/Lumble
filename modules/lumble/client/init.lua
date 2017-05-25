@@ -10,7 +10,6 @@ local proto = require("lumble.proto")
 local event = require("lumble.event")
 
 local opus = require("lumble.opus")
-local audio = require("lumble.client.audio")
 
 local buffer = require("buffer")
 local socket = require("socket")
@@ -189,7 +188,7 @@ end
 function client:pingUDP()
 	local b = buffer()
 	b:writeByte(0x20)
-	b:writeVarInt(self:getTime() * 1000)
+	b:writeMumbleVarInt(self:getTime() * 1000)
 end
 
 local next_ping = socket.gettime() + 5
@@ -232,8 +231,8 @@ function client:update()
 				local codec = bit.rshift(header, 5)
 				local target = bit.band(header, 31)
 
-				local session = voice:readVarInt()
-				local sequence = voice:readVarInt()
+				local session = voice:readMumbleVarInt()
+				local sequence = voice:readMumbleVarInt()
 
 				--print(#read, codec, target, session, sequence, ("%q"):format(read))
 
@@ -274,8 +273,16 @@ local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 encoder:set("vbr", 0)
 encoder:set("bitrate", 48000)
 
+function client:createAudioPacket(mode, target, sequence)
+	local b = buffer()
+	local header = bor(lshift(mode, 5), target)
+	b:writeByte(header)
+	b:writeMumbleVarInt(sequence)
+	return b
+end
+
 function client:streamAudio()
-	local b = audio.createPacket(4, 0, sequence)
+	local b = self:createAudioPacket(4, 0, sequence)
 
 	local PCM = {}
 
@@ -284,8 +291,7 @@ function client:streamAudio()
 	end
 
 	local encoded, len = encoder:encode(PCM, #PCM, FRAME_SIZE, 0x1FFF)
-
-	audio.writeVarInt(b, len)
+	b:writeMumbleVarInt(len)
 	b:write(ffi.string(encoded))
 
 	local len = #b
