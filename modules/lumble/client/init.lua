@@ -217,6 +217,11 @@ function client:update()
 			local id = buff:readShort()
 			local len = buff:readInt()
 
+			if not id or not len then
+				log.warn("Bad backet: %q", read)
+				return true
+			end
+
 			read, err = self.tcp:receive(len)
 
 			if id == 1 then
@@ -498,6 +503,7 @@ end
 
 function client:onUserStats(packet)
 	local user = self.users[packet.session]
+	if not user then return end
 	user:updateStats(packet)
 	self:hookCall("OnUserStats", event.new(self, packet.proto, true))
 end

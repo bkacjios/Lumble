@@ -78,8 +78,8 @@ function user:requestStats(stats_only)
 	self:send(msg)
 end
 
-function user:getChannel()
-	return self.client.channels[self.channel_id]
+function user:getChannel(path)
+	return self.client.channels[self.channel_id or 0](path)
 end
 
 function user:getSession()

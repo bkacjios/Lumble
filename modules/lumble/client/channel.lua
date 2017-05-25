@@ -31,8 +31,6 @@ function channel:__call(path)
 end
 
 function channel:get(path)
-	assert(self ~= nil, "self cannot be nil")
-
 	if path == nil then
 		return self
 	end
@@ -113,7 +111,7 @@ function channel:getID()
 end
 
 function channel:getParent()
-	return self.client.channels[self.parent]
+	return self.client.channels[self.parent or 0]
 end
 
 function channel:getName()
