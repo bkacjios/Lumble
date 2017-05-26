@@ -306,6 +306,8 @@ function client:streamAudio()
 	b:seek("set", 2)
 	b:writeInt(#b - 2 - 4) -- Set size of payload
 
+	print(("%q"):format(b:toString()))
+
 	self.tcp:send(b:toString())
 
 	sequence = (sequence + 1) % 0xffff
