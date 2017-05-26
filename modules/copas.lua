@@ -538,7 +538,6 @@ end
 
 local function _doTick (co, skt, ...)
   if not co then return end
-
   local ok, res, new_q = coroutine.resume(co, skt, ...)
 
   if ok and res and new_q then
@@ -547,7 +546,7 @@ local function _doTick (co, skt, ...)
   else
     if not ok then pcall (_errhandlers [co] or _deferror, res, co, skt) end
     if skt and copas.autoclose and isTCP(skt) then 
-      skt:close() -- do not auto-close UDP sockets, as the handler socket is also the server socket
+      --skt:close() -- do not auto-close UDP sockets, as the handler socket is also the server socket
     end
     _errhandlers [co] = nil
   end
@@ -720,8 +719,9 @@ local function _select (timeout)
   local now = gettime()
   local duration = function(t2, t1) return t2-t1 end
 	local suc
-  suc, _readable_t._evs, _writable_t._evs, err = pcall(socket.select,_reading, _writing, timeout)
-  if not suc then return nil end--um.
+  suc, _readable_t._evs, _writable_t._evs, err = pcall(socket.select, _reading, _writing, timeout)
+  if not suc then return end
+  
   local r_evs, w_evs = _readable_t._evs, _writable_t._evs
 
   if duration(now, last_cleansing) > WATCH_DOG_TIMEOUT then

@@ -97,8 +97,8 @@ function client.new(host, port, params)
 	meta.encoder:set('bitrate', 40000)
 	meta.active = true
 	meta = setmetatable(meta, client)
-	copas.addthread(client.loop, meta)
-	
+	copas.addthread(function() meta:loop() end)
+	copas.addthread(function() meta:audioloop() end)
 	return meta
 end
 
@@ -124,9 +124,11 @@ function client:loop()
 	end
 end
 function client:audioloop()
+	local last = socket.gettime()
 	while self.active do
 		self:streamAudio()
-		copas.sleep(1/100)
+		copas.sleep(1/20 - (socket.gettime() - last))
+		last = socket.gettime()
 	end
 end
 
@@ -324,7 +326,7 @@ local ogg = assert(stream("metroid.ogg"))
 function client:streamAudio()
 	local b = self:createAudioPacket(4, 0, sequence)
 
-	local pcm, pcm_size = ogg:streamSamples(10)
+	local pcm, pcm_size = ogg:streamSamples(60)
 	if not pcm or pcm_size <= 0 then return end
 
 	local encoded, encoded_len = self.encoder:encode(pcm, pcm_size, pcm_size, 1024)
@@ -342,7 +344,7 @@ function client:streamAudio()
 end
 
 function client:sleep(t)
-	socket.sleep(t)
+	copas.sleep(t)
 end
 
 function client:onPacket(packet)
@@ -385,7 +387,7 @@ function client:onReject(packet)
 end
 
 function client:onServerSync(packet)
-	--copas.addthread(client.audioloop, meta) ASDASDASD
+	-- ASDASDASD
 	self.synced = true
 	self.permissions[0] = packet.permissions
 	self.session = packet.session
