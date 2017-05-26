@@ -143,13 +143,16 @@ function client:auth(username, password, tokens)
 	version:set("version", bit.lshift(tonumber(major), 16) + bit.lshift(tonumber(minor), 8) + tonumber(patch))
 	version:set("release", _VERSION)
 
-	local file = assert(io.popen('uname -s', 'r'))
+	--[[local file = assert(io.popen('uname -s', 'r'))
 	version:set("os", file:read('*line'))
 	file:close()
 
 	local file = assert(io.popen('uname -r', 'r'))
 	version:set("os_version", file:read('*line'))
-	file:close()
+	file:close()]]
+
+	version:set("os", jit.os)
+	version:set("os_version", jit.arch)
 
 	self:send(version)
 
@@ -196,7 +199,7 @@ local next_ping = socket.gettime() + 5
 function client:update()
 	local now = socket.gettime()
 
-	--self:streamAudio()
+	self:streamAudio()
 
 	if not next_ping or next_ping <= now then
 		next_ping = now + 5
@@ -259,7 +262,7 @@ end
 
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
-local FRAME_DURATION = 10 -- ms
+local FRAME_DURATION = 20 -- ms
 local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
 local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
 local PCM_LEN = PCM_SIZE / 2
@@ -292,7 +295,7 @@ function client:streamAudio()
 	local PCM = {}
 
 	while #PCM < FRAME_SIZE do
-		table.insert(PCM, wav:readShort())
+		table.insert(PCM, wav:readShort() * 0.2)
 	end
 
 	local encoded, len = encoder:encode(PCM, #PCM, FRAME_SIZE, 0x1FFF)

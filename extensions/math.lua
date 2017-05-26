@@ -1,7 +1,5 @@
 math.randomseed(os.time())
 
-local pi = require("pi")
-
 function math.roll(dice, num)
 	local results = {}
 	local total = 0
