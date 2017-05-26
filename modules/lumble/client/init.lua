@@ -35,6 +35,7 @@ function client.new(host, port, params)
 	if not tcp then return false, err end
 
 	status, err = tcp:dohandshake()
+	
 	if not status then return false, err end
 	tcp:settimeout(0)
 
@@ -85,7 +86,8 @@ function client.new(host, port, params)
 		commands = {},
 		start = socket.gettime(),
 	}
-
+	meta.encoder:set('vbr', 0)
+	meta.encoder:set('bitrate', 40000)
 	return setmetatable(meta, client)
 end
 
@@ -182,9 +184,13 @@ end
 
 function client:pingTCP()
 	local ping = packet.new("Ping")
-	ping:set("timestamp", self:getTime() * 1000)
-	ping:set("tcp_packets", self.ping.tcp_packets)
-	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
+	--ping:set("timestamp", self:getTime() * 1000)
+	--ping:set("tcp_packets", self.ping.tcp_packets)
+	--ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
+	ping:set("timestamp", 12)
+	ping:set("tcp_packets", 34)
+	ping:set("tcp_ping_avg", 56)
+	
 	self:send(ping)
 end
 
@@ -212,6 +218,7 @@ function client:update()
 
 	while read do
 		read, err = self.tcp:receive(6)
+		--print(read,err)
 
 		if read then
 			local buff = buffer(read)
@@ -288,29 +295,30 @@ function client:createAudioPacket(mode, target, seq)
 	b:writeMumbleVarInt(seq, 2)
 	return b
 end
-
+local last = os.clock()
 function client:streamAudio()
+	if(math.random()>0.9) then
+		--print((1/(socket.gettime()-last)))
+		
+	end
+	last=socket.gettime()
 	local b = self:createAudioPacket(4, 0, sequence)
 
-	local PCM = {}
+	
 
-	while #PCM < FRAME_SIZE do
-		table.insert(PCM, wav:readShort() * 0.2)
-	end
-
-	local encoded, len = encoder:encode(PCM, #PCM, FRAME_SIZE, 0x1FFF)
-
+	local encoded, len = encoder:encode(PCM, FRAME_SIZE, FRAME_SIZE, 1024)
+	if not encoded then return end
 	b:writeMumbleVarInt(len, 2)
 	b:write(ffi.string(encoded, len))
 
 	b:seek("set", 2)
-	b:writeInt(#b - 2 - 4) -- Set size of payload
+	b:writeInt(b.length - 6) -- Set size of payload
 
-	print(("%q"):format(b:toString()))
+	--print(("%q"):format(b:toString()))
 
 	self.tcp:send(b:toString())
 
-	sequence = (sequence + 1) % 0xffff
+	sequence = (sequence + 1) % 10000
 end
 
 function client:sleep(t)

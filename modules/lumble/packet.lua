@@ -67,7 +67,7 @@ function packet:toString()
 	local data = self:serialize()
 	buff:writeInt(#data)
 	buff:write(data)
-	buff:dump()
+	--buff:dump()
 	return buff:toString()
 end
 
