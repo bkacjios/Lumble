@@ -5,7 +5,7 @@ function math.roll(dice, num)
 	local total = 0
 
 	for i=1, num or 1 do
-		results[i] = pi.random(1, dice)
+		results[i] = math.random(1, dice)
 		total = total + results[i]
 	end
 
