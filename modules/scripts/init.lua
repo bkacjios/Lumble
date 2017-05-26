@@ -3,6 +3,7 @@ local afk = require("scripts.afk")
 local lua = require("scripts.lua")
 local mumble = require("lumble")
 local log = require("log")
+local ev = require("ev")
 
 local params = {
 	mode = "client",
@@ -14,9 +15,13 @@ local params = {
 --local client = mumble.getClient("198.27.70.16", 7331, params)
 local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
 
-
 if not client then return end
 client:auth("LuaBot")
+
+local timer = ev.Timer.new(function()
+	client:streamAudio()
+end, 0.02, 0.02)
+timer:start(ev.Loop.default)
 
 client:hook("OnServerSync", function(client, me)
 	local channel = client:getChannel("DongerBots Chamber of sentience learning")

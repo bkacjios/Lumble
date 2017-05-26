@@ -2,7 +2,6 @@ local ffi = require("ffi")
 local lib = ffi.load("opus")
 
 local gc, new, typeof = ffi.gc, ffi.new, ffi.typeof
-local stb = require'lumble.vorbis'
 ffi.cdef[[
 typedef int16_t opus_int16;
 typedef int32_t opus_int32;
@@ -78,7 +77,7 @@ local opus_int32_ptr = typeof("opus_int32[1]")
 local Encoder = {}
 Encoder.__index = Encoder
 
-function Encoder:__new(sample_rate, channels, app) -- luacheck:ignore self
+function Encoder:__new(sample_rate, channels, app)
 	app = app or OPUS_APPLICATION_AUDIO
 
 	local err = int_ptr()
@@ -92,35 +91,10 @@ function Encoder:__new(sample_rate, channels, app) -- luacheck:ignore self
 
 	return state
 end
-local x = 0
-local err = ffi.new('int[1]')
-local vorbis = stb.stb_vorbis_open_filename( 'crocadile.ogg', err, nil )
-local info = stb.stb_vorbis_get_info( vorbis )
-local sampleCount = stb.stb_vorbis_stream_length_in_samples(vorbis)
-local samples = ffi.new( 'float[?]', sampleCount )
-stb.stb_vorbis_get_samples_float_interleaved( vorbis, 1, samples, sampleCount );
-local duration = stb.stb_vorbis_stream_length_in_seconds(vorbis)
 
-stb.stb_vorbis_close( vorbis )
-local start = os.clock()
-local last = 0
-local finish
-local cs = 0
-local socket=require'socket'
-local last = socket.gettime()
 function Encoder:encode(input, input_len, frame_size, max_data_bytes)
-	if not finish then finish = os.clock() + duration end
-	--last = socket.gettime()
-	--if (last - socket.gettime()) < (1/(48000/50)/2) then return end
-	
-	local sample = math.floor((1-(finish - os.clock())/duration) * sampleCount)
-	input_len = 480
-	
-	if sample < (cs-input_len*10) then return end--buffer 10 samples ahead
-	cs = cs + input_len
 	local data = new("unsigned char[?]", max_data_bytes)
-	
-	local ret = lib.opus_encode_float(self, samples + cs, input_len, data, max_data_bytes)
+	local ret = lib.opus_encode_float(self, input, input_len, data, max_data_bytes)
 	if ret < 0 then return throw(ret) end
 
 	return data, ret

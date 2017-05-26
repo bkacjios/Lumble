@@ -10,6 +10,7 @@ local proto = require("lumble.proto")
 local event = require("lumble.event")
 
 local opus = require("lumble.opus")
+local stream = require("lumble.client.audiostream")
 
 local buffer = require("buffer")
 local socket = require("socket")
@@ -45,8 +46,12 @@ function client.new(host, port, params)
 	local status, err = udp:setpeername(host, port)
 	if not status then return false, err end
 
+	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
+	encoder:set("vbr", 0)
+	encoder:set("bitrate", 40000)
+
 	local meta = {
-		encoder = opus.Encoder(SAMPLE_RATE, CHANNELS),
+		encoder = encoder,
 		tcp = tcp,
 		udp = udp,
 		host = host,
@@ -184,13 +189,9 @@ end
 
 function client:pingTCP()
 	local ping = packet.new("Ping")
-	--ping:set("timestamp", self:getTime() * 1000)
-	--ping:set("tcp_packets", self.ping.tcp_packets)
-	--ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
-	ping:set("timestamp", 12)
-	ping:set("tcp_packets", 34)
-	ping:set("tcp_ping_avg", 56)
-	
+	ping:set("timestamp", self:getTime() * 1000)
+	ping:set("tcp_packets", self.ping.tcp_packets)
+	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)	
 	self:send(ping)
 end
 
@@ -205,8 +206,6 @@ local next_ping = socket.gettime() + 5
 function client:update()
 	local now = socket.gettime()
 
-	self:streamAudio()
-
 	if not next_ping or next_ping <= now then
 		next_ping = now + 5
 		self:pingTCP()
@@ -218,7 +217,6 @@ function client:update()
 
 	while read do
 		read, err = self.tcp:receive(6)
-		--print(read,err)
 
 		if read then
 			local buff = buffer(read)
@@ -269,19 +267,12 @@ end
 
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
-local FRAME_DURATION = 20 -- ms
+local FRAME_DURATION = 10 -- ms
 local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
 local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
 local PCM_LEN = PCM_SIZE / 2
 
-local wav = assert(io.open("metroid.wav", "rb"))
-wav:seek("set", 44)
-
 local sequence = 1
-local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
-
-encoder:set("vbr", 0)
-encoder:set("bitrate", 40000)
 
 local bor = bit.bor
 local lshift = bit.lshift
@@ -295,26 +286,23 @@ function client:createAudioPacket(mode, target, seq)
 	b:writeMumbleVarInt(seq, 2)
 	return b
 end
-local last = os.clock()
+
+local ogg = assert(stream("lookingkindofdumb.ogg"))
+
 function client:streamAudio()
-	if(math.random()>0.9) then
-		--print((1/(socket.gettime()-last)))
-		
-	end
-	last=socket.gettime()
 	local b = self:createAudioPacket(4, 0, sequence)
 
-	
+	local pcm, pcm_size = ogg:streamSamples(10)
+	if not pcm or pcm_size <= 0 then return end
 
-	local encoded, len = encoder:encode(PCM, FRAME_SIZE, FRAME_SIZE, 1024)
-	if not encoded then return end
-	b:writeMumbleVarInt(len, 2)
-	b:write(ffi.string(encoded, len))
+	local encoded, encoded_len = self.encoder:encode(pcm, pcm_size, pcm_size, 1024)
+	if not encoded or encoded_len <= 0 then return end
+
+	b:writeMumbleVarInt(encoded_len, 2)
+	b:write(ffi.string(encoded, encoded_len))
 
 	b:seek("set", 2)
 	b:writeInt(b.length - 6) -- Set size of payload
-
-	--print(("%q"):format(b:toString()))
 
 	self.tcp:send(b:toString())
 
