@@ -8,12 +8,12 @@ STREAM.__index = STREAM
 
 function AudioStream(file)
 	local err = new('int[1]')
-	local vorbis = stb.stb_vorbis_open_filename('lookingkindofdumb.ogg', err, nil)
+	local vorbis = stb.stb_vorbis_open_filename(file, err, nil)
 	if err[0] < 0 then return nil, stb.stb_vorbis_get_error(vorbis) end
 
 	return setmetatable({
 		vorbis = vorbis,
-		volume = 0.5,
+		volume = 0.25,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
 		buffer = {}

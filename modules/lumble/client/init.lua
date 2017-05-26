@@ -48,7 +48,7 @@ function client.new(host, port, params)
 
 	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 	encoder:set("vbr", 0)
-	encoder:set("bitrate", 40000)
+	encoder:set("bitrate", 55000)
 
 	local meta = {
 		encoder = encoder,
@@ -287,7 +287,7 @@ function client:createAudioPacket(mode, target, seq)
 	return b
 end
 
-local ogg = assert(stream("lookingkindofdumb.ogg"))
+local ogg = assert(stream("metroid.ogg"))
 
 function client:streamAudio()
 	local b = self:createAudioPacket(4, 0, sequence)
