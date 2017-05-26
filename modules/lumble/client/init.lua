@@ -13,21 +13,22 @@ local opus = require("lumble.opus")
 local stream = require("lumble.client.audiostream")
 
 local buffer = require("buffer")
+local copas = require("copas")
 local socket = require("socket")
 local ssl = require("ssl")
 local bit = require("bit")
 local log = require("log")
 local util = require("util")
+local mumble
 
 local ffi = require("ffi")
+
 
 require("extensions.string")
 
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
-
-function client.new(host, port, params)
-	local tcp = socket.tcp()
+--[[local tcp = socket.tcp()
 	tcp:settimeout(5)
 
 	local status, err = tcp:connect(host, port)
@@ -37,15 +38,17 @@ function client.new(host, port, params)
 
 	status, err = tcp:dohandshake()
 	
+	if not status then return false, err end]]
+function client.new(host, port, params)
+	if not mumble then mumble = require'lumble' end
+	local tcp = socket.tcp()
+	tcp:settimeout(5)
+
+	local status, err = tcp:connect(host, port)
 	if not status then return false, err end
-	tcp:settimeout(0)
-
-	local udp = socket.udp()
-	udp:settimeout(0)
-
-	local status, err = udp:setpeername(host, port)
-	if not status then return false, err end
-
+	
+	tcp, err = copas.wrap(tcp, params):dohandshake()
+	if not tcp then return false, err end
 	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 	encoder:set("vbr", 0)
 	encoder:set("bitrate", 55000)
@@ -53,7 +56,6 @@ function client.new(host, port, params)
 	local meta = {
 		encoder = encoder,
 		tcp = tcp,
-		udp = udp,
 		host = host,
 		port = port,
 		params = params,
@@ -93,7 +95,39 @@ function client.new(host, port, params)
 	}
 	meta.encoder:set('vbr', 0)
 	meta.encoder:set('bitrate', 40000)
-	return setmetatable(meta, client)
+	meta.active = true
+	meta = setmetatable(meta, client)
+	copas.addthread(client.loop, meta)
+	
+	return meta
+end
+
+function client:loop()
+	while self.active do
+		local time = os.time()
+		local status, err = self:update()
+		if not status and err then
+			mumble.clients[self.host][self.port] = nil
+			table.insert(mumble.reconnect, {
+				host = self.host,
+				port = self.port,
+				params = self.params,
+				username = self.username,
+				password = self.password,
+				time = time + 1,
+				try = 1,
+			})
+			self:close()
+			return
+		end
+		copas.sleep(1/10)
+	end
+end
+function client:audioloop()
+	while self.active do
+		self:streamAudio()
+		copas.sleep(1/100)
+	end
 end
 
 --function client:__tostring()
@@ -102,7 +136,7 @@ end
 
 function client:close()
 	self.tcp:close()
-	self.udp:close()
+	self.active = false
 end
 
 function client:isSynced()
@@ -215,51 +249,49 @@ function client:update()
 	local read = true
 	local err
 
-	while read do
-		read, err = self.tcp:receive(6)
+	read, err = self.tcp:receive(6)
 
-		if read then
-			local buff = buffer(read)
+	if read then
+		local buff = buffer(read)
 
-			local id = buff:readShort()
-			local len = buff:readInt()
-			
-			if not id or not len then
-				log.warn("Bad backet: %q", read)
-				return true
-			end
-
-			read, err = self.tcp:receive(len)
-
-			if id == 1 then
-				local voice = buffer(read)
-
-				local header = voice:readByte()
-
-				local codec = bit.rshift(header, 5)
-				local target = bit.band(header, 31)
-
-				local session = voice:readMumbleVarInt()
-				local sequence = voice:readMumbleVarInt()
-
-				--print(#read, codec, target, session, sequence, ("%q"):format(read))
-
-				-- Ignore voice data for now..
-			else
-				local packet = packet.new(id, read)
-				self:onPacket(packet)
-			end
-		elseif err == "wantread" then
+		local id = buff:readShort()
+		local len = buff:readInt()
+		
+		if not id or not len then
+			log.warn("Bad backet: %q", read)
 			return true
-		elseif err == "wantwrite" then
-			return true
-		elseif err == "timeout" then
-			return true
-		else
-			log.error("connection error %q", err)
-			self.tcp:close()
-			return false, err
 		end
+
+		read, err = self.tcp:receive(len)
+
+		if id == 1 then
+			local voice = buffer(read)
+
+			local header = voice:readByte()
+
+			local codec = bit.rshift(header, 5)
+			local target = bit.band(header, 31)
+
+			local session = voice:readMumbleVarInt()
+			local sequence = voice:readMumbleVarInt()
+
+			--print(#read, codec, target, session, sequence, ("%q"):format(read))
+
+			-- Ignore voice data for now..
+		else
+			local packet = packet.new(id, read)
+			self:onPacket(packet)
+		end
+	elseif err == "wantread" then
+		return true
+	elseif err == "wantwrite" then
+		return true
+	elseif err == "timeout" then
+		return true
+	else
+		log.error("connection error %q", err)
+		self.tcp:close()
+		return false, err
 	end
 
 	return false
@@ -353,6 +385,7 @@ function client:onReject(packet)
 end
 
 function client:onServerSync(packet)
+	--copas.addthread(client.audioloop, meta) ASDASDASD
 	self.synced = true
 	self.permissions[0] = packet.permissions
 	self.session = packet.session

@@ -285,4 +285,4 @@ enum STBVorbisError
 	VORBIS_seek_failed,
 };
 ]]
-return ffi.load('./libstbvorbis.so')
+return ffi.load('./stbvorbis')
