@@ -89,9 +89,9 @@ function client.new(host, port, params)
 	return setmetatable(meta, client)
 end
 
-function client:__tostring()
-	return ("lumble.client[\"%s:%d\"]"):format(self.host, self.port)
-end
+--function client:__tostring()
+--	return ("lumble.client[\"%s:%d\"]"):format(self.host, self.port)
+--end
 
 function client:close()
 	self.tcp:close()
@@ -218,7 +218,7 @@ function client:update()
 
 			local id = buff:readShort()
 			local len = buff:readInt()
-
+			
 			if not id or not len then
 				log.warn("Bad backet: %q", read)
 				return true
@@ -439,6 +439,7 @@ function client:onTextMessage(packet)
 		local args = msg:parseArgs()
 		local cmd = table.remove(args,1)
 		local info = self.commands[cmd:lower():sub(2)]
+		
 		if info then
 			if info.master and not user:isMaster() then
 				log.warn("%s: %s (PERMISSION DENIED)", user, msg)

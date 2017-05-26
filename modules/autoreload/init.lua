@@ -41,7 +41,6 @@ end
 
 function autoreload.getPackageFile(module)
 	module = module:gsub("%.", "/")
-
 	for file in string.gmatch(package.path:gsub("?", module), "([^;]+)") do
 		if lfs.attributes(file, "mode") == "file" then
 			local f = io.open(file, "rb")
@@ -57,8 +56,8 @@ function autoreload.watch(module)
 
 	local file, crc = autoreload.getPackageFile(module)
 
-	-- log.warn("lua module '".. module .. "' not found: skipping, probably C module")
-	if not file then return end
+	
+	if not file then  log.warn("lua module '".. module .. "' not found: skipping, probably C module") return end
 
 	if autoreload.monitoring[module] then return end
 

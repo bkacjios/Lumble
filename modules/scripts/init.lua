@@ -1,3 +1,4 @@
+
 local afk = require("scripts.afk")
 local lua = require("scripts.lua")
 local mumble = require("lumble")
@@ -11,6 +12,7 @@ local params = {
 }
 
 local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
+
 if not client then return end
 client:auth("LuaBot")
 
