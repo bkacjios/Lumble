@@ -1,7 +1,7 @@
 local client = require("lumble.client")
 local server = require("lumble.server")
 local reload = require("autoreload.reload")
-local copas = require("copas")
+local synch = require("synchronous")
 local log = require("log")
 
 local mumble = {
@@ -9,23 +9,25 @@ local mumble = {
 	servers = {},
 	reconnect = {},
 }
-
+--Returns a promise to the client.
 function mumble.connect(host, port, params, noretry)
-	local client, err = client.new(host, port, params)
-
+	
+	return synch.promise(function(fulfill, reject)
+		local ret = client.new(fulfill, reject, host, port, params)
+		if not ret then return end
+		mumble.clients[host] = mumble.clients[host] or {}
+		mumble.clients[host][port] = client
+	end)
+	
+	--[[
 	if not client then
 		if not noretry then
 			table.insert(mumble.reconnect, {host = host, port = port, params = params, time = os.time() + 1, try = 1})
 		end
 		return false, err
 	end
+	]]
 
-	mumble.clients[host] = mumble.clients[host] or {}
-	mumble.clients[host][port] = client
-
-	reload.reload("scripts")
-
-	return client
 end
 
 function mumble.getClients()
@@ -34,7 +36,9 @@ end
 
 function mumble.getClient(host, port, params)
 	if mumble.clients[host] and mumble.clients[host][port] then
-		return mumble.clients[host][port]
+		return synch.promise(function(fulfill)
+			fulfill(mumble.clients[host][port])
+		end)
 	end
 
 	return mumble.connect(host, port, params)
@@ -54,7 +58,7 @@ function mumble.host(host, port)
 end
 
 function mumble.update()
-	local time = os.time()
+	local time = synch.getTime()
 
 	for i, info in pairs(mumble.reconnect) do
 		if info.time <= time then
@@ -73,7 +77,7 @@ function mumble.update()
 end
 
 function mumble.setup()
-	copas.addthread(mumble.update)
+	synch.addThread(mumble.update)
 end
 
 return mumble

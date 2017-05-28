@@ -1,6 +1,7 @@
 package.path = package.path .. ';./modules/?.lua;./modules/?/init.lua'
---require'log'.level = 'trace'
-local copas = require("copas")
+require'log'.level = 'trace'
+local synch = require'synchronous'
+synch.registerTaskManager(require'synchronous.luasocket')
 local autoreload = require("autoreload")
 --local terminal = require("terminal")
 local concommand = require("concommand")
@@ -15,7 +16,8 @@ while true do
 	socket.sleep(0.01)
 end]]
 
-
+synch.addThread(startup)
 mumble.setup()
-copas.addthread(startup)
-copas.loop()
+synch.loop()
+--copas.addthread(startup)
+--copas.loop()

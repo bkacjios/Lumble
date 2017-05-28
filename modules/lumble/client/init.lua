@@ -13,7 +13,7 @@ local opus = require("lumble.opus")
 local stream = require("lumble.client.audiostream")
 
 local buffer = require("buffer")
-local copas = require("copas")
+local synch = require("synchronous")
 local socket = require("socket")
 local ssl = require("ssl")
 local bit = require("bit")
@@ -39,16 +39,21 @@ local SAMPLE_RATE = 48000
 	status, err = tcp:dohandshake()
 	
 	if not status then return false, err end]]
-function client.new(host, port, params)
+--Do not use directly! Use lumble.new
+function client.new(fulfill, reject, host, port, params)
 	if not mumble then mumble = require'lumble' end
-	local tcp = socket.tcp()
-	tcp:settimeout(5)
+	
+	local tcp = synch.wrapSocket(socket.tcp())
 
 	local status, err = tcp:connect(host, port)
-	if not status then return false, err end
 	
-	tcp, err = copas.wrap(tcp, params):dohandshake()
-	if not tcp then return false, err end
+	if not status then return reject(err) end
+	
+	local suc, err = tcp:dohandshake(params) 
+	
+	if not suc then return reject(err) end
+	
+	
 	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 	encoder:set("vbr", 0)
 	encoder:set("bitrate", 55000)
@@ -97,15 +102,21 @@ function client.new(host, port, params)
 	meta.encoder:set('bitrate', 40000)
 	meta.active = true
 	meta = setmetatable(meta, client)
-	copas.addthread(function() meta:loop() end)
-	copas.addthread(function() meta:audioloop() end)
-	return meta
+	synch.addThread(function() meta:loop() end)
+	local prev = synch.getTime()
+	synch.afterRepeat(0.06, true, function()
+		--print(synch.getTime()-prev)
+		meta:streamAudio()
+		prev = synch.getTime()
+	end)
+	return meta, fulfill(meta)
 end
 
 function client:loop()
 	while self.active do
 		local time = os.time()
 		local status, err = self:update()
+		
 		if not status and err then
 			mumble.clients[self.host][self.port] = nil
 			table.insert(mumble.reconnect, {
@@ -120,17 +131,17 @@ function client:loop()
 			self:close()
 			return
 		end
-		copas.sleep(1/10)
+		synch.sleep(1/10)
 	end
 end
-function client:audioloop()
+--[[function client:audioloop()
 	local last = socket.gettime()
 	while self.active do
 		self:streamAudio()
-		copas.sleep(1/20 - (socket.gettime() - last))
+		synch.sleep(1/20 - (socket.gettime() - last))
 		last = socket.gettime()
 	end
-end
+end]]
 
 --function client:__tostring()
 --	return ("lumble.client[\"%s:%d\"]"):format(self.host, self.port)
@@ -250,9 +261,9 @@ function client:update()
 
 	local read = true
 	local err
-
+	
 	read, err = self.tcp:receive(6)
-
+	
 	if read then
 		local buff = buffer(read)
 
@@ -263,9 +274,7 @@ function client:update()
 			log.warn("Bad backet: %q", read)
 			return true
 		end
-
 		read, err = self.tcp:receive(len)
-
 		if id == 1 then
 			local voice = buffer(read)
 

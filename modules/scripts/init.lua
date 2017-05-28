@@ -1,19 +1,17 @@
+local afk = require("scripts.afk")
+local lua = require("scripts.lua")
+local mumble = require("lumble")
+local log = require("log")
+
+local params = {
+	mode = "client",
+	protocol = "sslv23",
+	key = "config/dongerbot.key",
+	certificate = "config/dongerbot.pem",
+}
 return function()
-	local afk = require("scripts.afk")
-	local lua = require("scripts.lua")
-	local mumble = require("lumble")
-	local log = require("log")
-
-	local params = {
-		mode = "client",
-		protocol = "sslv23",
-		key = "config/dongerbot.key",
-		certificate = "config/dongerbot.pem",
-	}
-
-	local client = mumble.getClient("198.27.70.16", 7331, params)
-	--local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
-
+--              ("mbl27.gameservers.com", 10004, params)
+mumble.getClient("198.27.70.16", 7331, params):after(function(client)
 	if not client then return end
 	client:auth("LuaBot")
 
@@ -102,4 +100,9 @@ return function()
 	<a href="https://github.com/bkacjios/Lumble">https://github.com/bkacjios/Lumble</a>]]
 		user:message(message)
 	end, "Get some information about LuaBot")
+end, function(err, tb)
+	print("Lumble failed to start!", err)
+	print(debug.traceback())
+	print("Originated from:", tb)
+end)
 end
