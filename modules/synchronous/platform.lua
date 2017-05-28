@@ -1,5 +1,6 @@
 local ffi = require'ffi'
 local tonumber = tonumber
+local floor = math.floor
 local M = {}
 return function(M)
 	if ffi.os == 'Windows' then
@@ -35,7 +36,7 @@ return function(M)
 				time_t tv_usec;
 			} timeval;
 			int gettimeofday(timeval*, void*);
-			void nanosleep(timeval*, timeval*)
+			void nanosleep(timeval*, timeval*);
 		]]
 		local tv = ffi.new('timeval[1]')
 		function M.getTime()
