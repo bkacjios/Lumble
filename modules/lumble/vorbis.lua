@@ -285,4 +285,9 @@ enum STBVorbisError
 	VORBIS_seek_failed,
 };
 ]]
-return ffi.load('./stbvorbis')
+
+if jit.os == "Windows" then
+	return ffi.load("./stbvorbis")
+else
+	return ffi.load("./libstbvorbis.so")
+end

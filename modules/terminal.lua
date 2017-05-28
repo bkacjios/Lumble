@@ -24,7 +24,7 @@ function terminal.new(main, input)
 
 	local timer = ev.Timer.new(function()
 		xpcall(main, error)
-	end, 0.02, 0.02)
+	end, 0.1, 0.1)
 	timer:start(loop)
 end
 

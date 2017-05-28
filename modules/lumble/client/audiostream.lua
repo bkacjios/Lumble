@@ -16,7 +16,8 @@ function AudioStream(file)
 		volume = 0.25,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
-		buffer = {}
+		buffer = {},
+		loops = 0,
 	}, STREAM)
 end
 
@@ -36,6 +37,11 @@ function STREAM:streamSamples(duration)
 
 	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 1, samples, frame_size)
 
+	if num_samples < frame_size and self.loops > 1 then
+		self.loops = self.loops - 1
+		self:seek("start")
+	end
+
 	for i=0,num_samples-1 do
 		samples[i] = samples[i] * self.volume
 	end
@@ -49,6 +55,20 @@ end
 
 function STREAM:getVolume()
 	return self.volume
+end
+
+function STREAM:loop(count)
+	self.loops = count or 0
+end
+
+function STREAM:seek(pos)
+	if pos == "start" then
+		stb.stb_vorbis_seek_start(self.vorbis)
+	elseif pos == "end" then
+		stb.stb_vorbis_seek_start(self.vorbis, self.samples)
+	else
+		stb.stb_vorbis_seek(self.vorbis, 0)
+	end
 end
 
 function STREAM:close()

@@ -1,7 +1,7 @@
 local client = require("lumble.client")
 local server = require("lumble.server")
 local reload = require("autoreload.reload")
-local copas = require("copas")
+--local copas = require("copas")
 local log = require("log")
 
 local mumble = {
@@ -62,7 +62,7 @@ function mumble.update()
 			local client, err = mumble.connect(info.host, info.port, info.params, true)
 			if client then
 				mumble.reconnect[i] = nil
-				client:auth(info.username, info.password)
+				client:auth(info.username, info.password, info.tokens)
 			else
 				info.time = time + (info.try * 5)
 				info.try = info.try + 1
@@ -70,10 +70,29 @@ function mumble.update()
 		end
 	end
 
+	for host, clients in pairs(mumble.clients) do
+		for port, client in pairs(clients) do
+			local status, err = client:update()
+			if not status and err then
+				mumble.clients[host][port] = nil
+				table.insert(mumble.reconnect, {
+					host = client.host,
+					port = client.port,
+					params = client.params,
+					username = client.username,
+					password = client.password,
+					tokens = client.tokens,
+					time = time + 1,
+					try = 1,
+				})
+			end
+		end
+	end
+
 end
 
-function mumble.setup()
+--[[function mumble.setup()
 	copas.addthread(mumble.update)
-end
+end]]
 
 return mumble

@@ -13,22 +13,22 @@ local opus = require("lumble.opus")
 local stream = require("lumble.client.audiostream")
 
 local buffer = require("buffer")
-local copas = require("copas")
+--local copas = require("copas")
 local socket = require("socket")
 local ssl = require("ssl")
 local bit = require("bit")
 local log = require("log")
 local util = require("util")
-local mumble
 
 local ffi = require("ffi")
-
 
 require("extensions.string")
 
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
---[[local tcp = socket.tcp()
+
+function client.new(host, port, params)	
+	local tcp = socket.tcp()
 	tcp:settimeout(5)
 
 	local status, err = tcp:connect(host, port)
@@ -37,21 +37,12 @@ local SAMPLE_RATE = 48000
 	if not tcp then return false, err end
 
 	status, err = tcp:dohandshake()
-	
-	if not status then return false, err end]]
-function client.new(host, port, params)
-	if not mumble then mumble = require'lumble' end
-	local tcp = socket.tcp()
-	tcp:settimeout(5)
-
-	local status, err = tcp:connect(host, port)
 	if not status then return false, err end
-	
-	tcp, err = copas.wrap(tcp, params):dohandshake()
-	if not tcp then return false, err end
+	tcp:settimeout(0)
+
 	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 	encoder:set("vbr", 0)
-	encoder:set("bitrate", 55000)
+	encoder:set("bitrate", 40000)
 
 	local meta = {
 		encoder = encoder,
@@ -92,57 +83,43 @@ function client.new(host, port, params)
 		hooks = {},
 		commands = {},
 		start = socket.gettime(),
+		volume = 0.25,
 	}
-	meta.encoder:set('vbr', 0)
-	meta.encoder:set('bitrate', 40000)
-	meta.active = true
-	meta = setmetatable(meta, client)
-	copas.addthread(function() meta:loop() end)
-	copas.addthread(function() meta:audioloop() end)
-	return meta
+	return setmetatable(meta, client)
 end
 
-function client:loop()
-	while self.active do
-		local time = os.time()
-		local status, err = self:update()
-		if not status and err then
-			mumble.clients[self.host][self.port] = nil
-			table.insert(mumble.reconnect, {
-				host = self.host,
-				port = self.port,
-				params = self.params,
-				username = self.username,
-				password = self.password,
-				time = time + 1,
-				try = 1,
-			})
-			self:close()
-			return
-		end
-		copas.sleep(1/10)
-	end
+function client:__tostring()
+	return ("lumble.client[\"%s:%d\"]"):format(self.host, self.port)
 end
-function client:audioloop()
-	local last = socket.gettime()
-	while self.active do
-		self:streamAudio()
-		copas.sleep(1/20 - (socket.gettime() - last))
-		last = socket.gettime()
-	end
-end
-
---function client:__tostring()
---	return ("lumble.client[\"%s:%d\"]"):format(self.host, self.port)
---end
 
 function client:close()
 	self.tcp:close()
-	self.active = false
 end
 
 function client:isSynced()
 	return self.synced
+end
+
+function client:playOgg(file, count)
+	local ogg, err = stream(file)
+	if ogg then
+		ogg:setVolume(self.volume)
+		ogg:loop(count)
+		self.playing = ogg
+		return ogg
+	end
+	return ogg, err
+end
+
+function client:setVolume(volume)
+	self.volume = volume
+	if self.playing then
+		self.playing:setVolume(volume)
+	end
+end
+
+function client:getVolume()
+	return self.volume
 end
 
 function client:hook(name, desc, callback)
@@ -206,6 +183,7 @@ function client:auth(username, password, tokens)
 
 	self.username = username
 	self.password = password
+	self.tokens = tokens
 
 	for k,v in pairs(tokens or {}) do
 		auth:add("tokens", v)
@@ -251,49 +229,61 @@ function client:update()
 	local read = true
 	local err
 
-	read, err = self.tcp:receive(6)
+	while read do
+		read, err = self.tcp:receive(6)
 
-	if read then
-		local buff = buffer(read)
+		if read then
+			local buff = buffer(read)
 
-		local id = buff:readShort()
-		local len = buff:readInt()
-		
-		if not id or not len then
-			log.warn("Bad backet: %q", read)
+			local id = buff:readShort()
+			local len = buff:readInt()
+			
+			if not id or not len then
+				log.warn("Bad backet: %q", read)
+				return true
+			end
+
+			read, err = self.tcp:receive(len)
+
+			if id == 1 then
+				--[[local voice = buffer(read)
+
+				local header = voice:readByte()
+
+				local codec = bit.rshift(header, 5)
+				local target = bit.band(header, 31)
+
+				local session = voice:readMumbleVarInt()
+				local sequence = voice:readMumbleVarInt()
+
+				local voice_header = voice:readByte()
+
+				local b = self:createAudioPacket(4, target, sequence)
+
+				local all = voice:readAll()
+
+				b:writeByte(voice_header)
+				b:write(all)
+
+				b:seek("set", 2)
+				b:writeInt(b.length - 6) -- Set size of payload
+
+				self.tcp:send(b:toString())]]
+			else
+				local packet = packet.new(id, read)
+				self:onPacket(packet)
+			end
+		elseif err == "wantread" then
 			return true
-		end
-
-		read, err = self.tcp:receive(len)
-
-		if id == 1 then
-			local voice = buffer(read)
-
-			local header = voice:readByte()
-
-			local codec = bit.rshift(header, 5)
-			local target = bit.band(header, 31)
-
-			local session = voice:readMumbleVarInt()
-			local sequence = voice:readMumbleVarInt()
-
-			--print(#read, codec, target, session, sequence, ("%q"):format(read))
-
-			-- Ignore voice data for now..
+		elseif err == "wantwrite" then
+			return true
+		elseif err == "timeout" then
+			return true
 		else
-			local packet = packet.new(id, read)
-			self:onPacket(packet)
+			log.error("connection error %q", err)
+			self.tcp:close()
+			return false, err
 		end
-	elseif err == "wantread" then
-		return true
-	elseif err == "wantwrite" then
-		return true
-	elseif err == "timeout" then
-		return true
-	else
-		log.error("connection error %q", err)
-		self.tcp:close()
-		return false, err
 	end
 
 	return false
@@ -321,16 +311,20 @@ function client:createAudioPacket(mode, target, seq)
 	return b
 end
 
-local ogg = assert(stream("metroid.ogg"))
-
 function client:streamAudio()
+	if not self.playing then return end
+
 	local b = self:createAudioPacket(4, 0, sequence)
 
-	local pcm, pcm_size = ogg:streamSamples(60)
+	local pcm, pcm_size = self.playing:streamSamples(10)
 	if not pcm or pcm_size <= 0 then return end
 
-	local encoded, encoded_len = self.encoder:encode(pcm, pcm_size, pcm_size, 1024)
+	local encoded, encoded_len = self.encoder:encode(pcm, FRAME_SIZE, FRAME_SIZE, 0x1FFF)
 	if not encoded or encoded_len <= 0 then return end
+
+	if pcm_size < FRAME_SIZE then
+		encoded_len = bor(lshift(1, 13), encoded_len)
+	end
 
 	b:writeMumbleVarInt(encoded_len, 2)
 	b:write(ffi.string(encoded, encoded_len))
@@ -344,7 +338,7 @@ function client:streamAudio()
 end
 
 function client:sleep(t)
-	copas.sleep(t)
+	socket.sleep(t)
 end
 
 function client:onPacket(packet)

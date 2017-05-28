@@ -3,6 +3,7 @@ user.__index = user
 
 local packet = require("lumble.packet")
 local util = require("util")
+local config = require("config")
 
 function user.new(client, packet)
 	local user = setmetatable({

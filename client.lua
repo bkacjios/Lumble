@@ -1,21 +1,24 @@
 package.path = package.path .. ';./modules/?.lua;./modules/?/init.lua'
+
 --require'log'.level = 'trace'
-local copas = require("copas")
+--local copas = require("copas")
 local autoreload = require("autoreload")
---local terminal = require("terminal")
+local terminal = require("terminal")
 local concommand = require("concommand")
 local mumble = require("lumble")
 
+require("scripts")
 
-local startup = require("scripts")
-
---[[local last = os.time()
-while true do
+local function main()
+	autoreload.poll()
 	mumble.update()
-	socket.sleep(0.01)
-end]]
+end
 
+terminal.new(main, concommand.loop)
+terminal.loop()
 
-mumble.setup()
+print()
+
+--[[mumble.setup()
 copas.addthread(startup)
-copas.loop()
+copas.loop()]]
