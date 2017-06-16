@@ -1,6 +1,21 @@
 local char = string.char
 local gsub = string.gsub
 
+function string.GetPathFromFilename(path)
+	return path:match("^(.*[/\\])[^/\\]-$") or ""
+end
+
+function string.ExtensionFromFile( path )
+	return path:match("%.([^%.]+)$")
+end
+
+function string.StripExtension( path )
+	local i = path:match(".+()%.[^%.]+$")
+	if i then return path:sub(1, i-1) end
+	return path
+end
+
+
 function string.gisub(s, pat, repl, n)
 	pat = string.gsub(pat, '(%a)', function (v)
 		return '['..string.upper(v)..string.lower(v)..']'

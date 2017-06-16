@@ -3,6 +3,7 @@ local lua = require("scripts.lua")
 local mumble = require("lumble")
 local log = require("log")
 local ev = require("ev")
+local lfs = require("lfs")
 
 local params = {
 	mode = "client",
@@ -17,14 +18,24 @@ local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
 if not client then return end
 client:auth("LuaBot", "", {"dnd"})
 
-local timer = ev.Timer.new(function()
-	client:streamAudio()
-end, 0.02, 0.02)
-timer:start(ev.Loop.default)
+local socket = require("socket")
+
+local function createStream(client)
+	local timer = ev.Timer.new(function()
+		for i=1,2 do
+			client:streamAudio()
+		end
+	end, 0.02, 0.02)
+	timer:start(ev.Loop.default)
+end
 
 client:hook("OnServerSync", function(client, me)
-	local channel = client:getChannel("DongerBots Chamber of sentience learning")
-	me:move(channel)
+	createStream(client)
+	--[[local channel = client:getChannel("DongerBots Chamber of sentience learning")
+	me:move(channel)]]
+	--me:setRecording(true)
+	--me:setPrioritySpeaker(true)
+	--client:playOgg("lookingkindofdumb.ogg")
 end)
 
 lua.install(client)
@@ -108,7 +119,7 @@ Created by <a href="https://github.com/Someguynamedpie">Somepotato</a> &amp; <a 
 end, "Get some information about LuaBot")
 
 client:addCommand("play", function(client, user, cmd, args, raw)
-	client:playOgg(("%s.ogg"):format(args[1]), tonumber(args[2]))
+	client:playOgg(("audio/%s.ogg"):format(args[1]), tonumber(args[2]))
 end)
 
 client:addCommand("volume", function(client, user, cmd, args, raw)
@@ -122,3 +133,56 @@ client:addCommand("volume", function(client, user, cmd, args, raw)
 		user:message(("Volume level: <b>%i</b>"):format(client:getVolume()*100))
 	end
 end)
+
+local playlist = {}
+local track = 0
+
+local function playPlaylist(client)
+	if track >= #playlist then
+		track = 0
+	end
+	track = track + 1
+
+	if playlist[track] then
+		client:playOgg(playlist[track])
+	end
+end
+
+client:hook("AudioFinish", playPlaylist)
+
+client:addCommand("dnd", function(client, user, cmd, args, raw)
+	playlist = {}
+
+	local path = ("audio/dnd/%s/"):format(args[1])
+
+	if args[1] == "none" or args[1] == "silence" then
+		if client:isPlaying() then
+			client:getPlaying():fadeOut(5)
+		end
+		return
+	end	
+
+	if lfs.attributes(path,"mode") ~= "directory" then
+		user:message("invalid mode: %s", args[1])
+		return
+	end
+
+	for file in lfs.dir(path) do
+		if file ~= "." and file ~= ".." and lfs.attributes(path .. file, "mode") == "file" and string.ExtensionFromFile(file) == "ogg" then
+			table.insert(playlist, path .. file)
+		end
+	end
+
+	table.Shuffle(playlist)
+
+	if client:isPlaying() then
+		client:getPlaying():fadeOut(5)
+	else
+		track = 0
+		playPlaylist(client)
+	end
+end):setHelp("Set mood music for D&D")
+
+client:addCommand("fade", function(client, user, cmd, args, raw)
+	client.playing:fadeOut(tonumber(args[1]) or 5)
+end):setHelp("Fade out the current audio")

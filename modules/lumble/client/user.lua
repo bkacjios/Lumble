@@ -36,6 +36,18 @@ function user:send(packet)
 	return self.client:send(packet)
 end
 
+function user:setRecording(bool)
+	local msg = packet.new("UserState")
+	msg:set("recording", bool and true or false)
+	self:send(msg)
+end
+
+function user:setPrioritySpeaker(bool)
+	local msg = packet.new("UserState")
+	msg:set("priority_speaker", bool and true or false)
+	self:send(msg)
+end
+
 function user:message(text, ...)
 	text = text or ""
 	local msg = packet.new("TextMessage")

@@ -390,16 +390,16 @@ end
 
 function BUFFER:dump(buf)
 	local len = self.length
-	for i = 0, math.ceil(len/10)-1 do
-		for x = i * 10, math.min((i+1)*10, len)-1 do
+	for i = 0, ceil(len/10)-1 do
+		for x = i * 10, min((i+1)*10, len)-1 do
 			io.write(('%.2x'):format(self.buffer[x]) .. ' ')
 		end
-		for i = math.min((i+1)*10, len), (i+1)*10 - 1 do
+		for i = min((i+1)*10, len), (i+1)*10 - 1 do
 			io.write'   '
 		end
 		io.write( ' | ' )
 		
-		for x = i * 10, math.min((i+1)*10, len) - 1 do
+		for x = i * 10, min((i+1)*10, len) - 1 do
 			local ch = self.buffer[x]
 			if ch < 32 or ch >= 200 then ch = '.'
 			else ch = char(ch) end

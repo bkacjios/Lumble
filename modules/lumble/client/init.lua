@@ -27,6 +27,11 @@ require("extensions.string")
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
 
+local FRAME_DURATION = 10 -- ms
+local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
+local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
+local PCM_LEN = PCM_SIZE / 2
+
 function client.new(host, port, params)	
 	local tcp = socket.tcp()
 	tcp:settimeout(5)
@@ -83,7 +88,7 @@ function client.new(host, port, params)
 		hooks = {},
 		commands = {},
 		start = socket.gettime(),
-		volume = 0.25,
+		volume = 0.4,
 	}
 	return setmetatable(meta, client)
 end
@@ -162,15 +167,6 @@ function client:auth(username, password, tokens)
 
 	version:set("version", bit.lshift(tonumber(major), 16) + bit.lshift(tonumber(minor), 8) + tonumber(patch))
 	version:set("release", _VERSION)
-
-	--[[local file = assert(io.popen('uname -s', 'r'))
-	version:set("os", file:read('*line'))
-	file:close()
-
-	local file = assert(io.popen('uname -r', 'r'))
-	version:set("os_version", file:read('*line'))
-	file:close()]]
-
 	version:set("os", jit.os)
 	version:set("os_version", jit.arch)
 
@@ -246,7 +242,7 @@ function client:update()
 			read, err = self.tcp:receive(len)
 
 			if id == 1 then
-				--[[local voice = buffer(read)
+				local voice = buffer(read)
 
 				local header = voice:readByte()
 
@@ -268,7 +264,7 @@ function client:update()
 				b:seek("set", 2)
 				b:writeInt(b.length - 6) -- Set size of payload
 
-				self.tcp:send(b:toString())]]
+				--self.tcp:send(b:toString())
 			else
 				local packet = packet.new(id, read)
 				self:onPacket(packet)
@@ -289,13 +285,6 @@ function client:update()
 	return false
 end
 
-local CHANNELS = 1
-local SAMPLE_RATE = 48000
-local FRAME_DURATION = 10 -- ms
-local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
-local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
-local PCM_LEN = PCM_SIZE / 2
-
 local sequence = 1
 
 local bor = bit.bor
@@ -311,16 +300,30 @@ function client:createAudioPacket(mode, target, seq)
 	return b
 end
 
+function client:getPlaying()
+	return self.playing
+end
+
+function client:isPlaying()
+	return self.playing ~= nil
+end
+
+function client:stopStream()
+	if not self.playing then return end
+	self.playing = nil
+	self:hookCall("AudioFinish")
+end
+
 function client:streamAudio()
 	if not self.playing then return end
 
 	local b = self:createAudioPacket(4, 0, sequence)
 
-	local pcm, pcm_size = self.playing:streamSamples(10)
-	if not pcm or pcm_size <= 0 then return end
+	local pcm, pcm_size = self.playing:streamSamples(FRAME_DURATION)
+	if not pcm or pcm_size <= 0 then self:stopStream() return end
 
 	local encoded, encoded_len = self.encoder:encode(pcm, FRAME_SIZE, FRAME_SIZE, 0x1FFF)
-	if not encoded or encoded_len <= 0 then return end
+	if not encoded or encoded_len <= 0 then self:stopStream() return end
 
 	if pcm_size < FRAME_SIZE then
 		encoded_len = bor(lshift(1, 13), encoded_len)
@@ -381,7 +384,6 @@ function client:onReject(packet)
 end
 
 function client:onServerSync(packet)
-	-- ASDASDASD
 	self.synced = true
 	self.permissions[0] = packet.permissions
 	self.session = packet.session

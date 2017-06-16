@@ -84,3 +84,18 @@ function table.print( t, indent, done )
 
 	io.stdout:flush()
 end
+
+function table.concatList(table, oxford)
+	local str = ""
+	local num = #table
+	for i=1,num do
+		if i < num then
+			str = str .. table[i] .. ((oxford or i < num - 1) and ", " or " ")
+		elseif i > 1 then
+			str = str .. "and " .. table[i]
+		else
+			str = str .. table[i]
+		end
+	end
+	return str
+end
