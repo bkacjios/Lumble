@@ -99,3 +99,34 @@ function table.concatList(table, oxford)
 	end
 	return str
 end
+
+function table.min(t)
+	local min = nil
+	for k,v in pairs(t) do
+		if not min or v < min then
+			min = v
+		end
+	end
+	return min
+end
+
+function table.max(t)
+	local max = nil
+	for k,v in pairs(t) do
+		if not max or v > max then
+			max = v
+		end
+	end
+	return max
+end
+
+function table.average(t)
+	local total = 0
+	local count = 0
+
+	for k,v in pairs(t) do
+		total = total + v
+		count = count + 1
+	end
+	return total / count
+end

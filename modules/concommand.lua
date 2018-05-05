@@ -99,6 +99,14 @@ concommand.Add("disconnect", function(cmd, args)
 	end
 end, "Disconnect from the server")
 
+concommand.Add("say", function(cmd, args, raw)
+	for host, clients in pairs(mumble.clients) do
+		for port, client in pairs(clients) do
+			client:getChannel("./An Absolute Classic"):message(raw:sub(4))
+		end
+	end
+end, "Say a thing")
+
 concommand.Add("exit", function(cmd, args)
 	os.exit()
 end, "Close the program")

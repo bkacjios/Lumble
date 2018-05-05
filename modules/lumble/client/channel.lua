@@ -110,12 +110,31 @@ function channel:getID()
 	return self.channel_id
 end
 
-function channel:getParent()
-	return self.client.channels[self.parent or 0]
+function channel:getParent(noroot)
+	if noroot then
+		return self.client.channels[self.parent]
+	else
+		return self.client.channels[self.parent or 0]
+	end
 end
 
 function channel:getName()
 	return self.name
+end
+
+function channel:getPath()
+	local path = {self:getName()}
+
+	local parent = self:getParent(true)
+
+	while parent do
+		if parent:getID() ~= 0 then
+			table.insert(path, 1, parent:getName())
+		end
+		parent = parent:getParent(true)
+	end
+
+	return "./" .. table.concat(path, "/")
 end
 
 function channel:getLinks()

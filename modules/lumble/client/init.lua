@@ -213,6 +213,8 @@ end
 
 local next_ping = socket.gettime() + 5
 
+local record = io.open("data.vorbis", "wba")
+
 function client:update()
 	local now = socket.gettime()
 
@@ -263,6 +265,8 @@ function client:update()
 
 				b:seek("set", 2)
 				b:writeInt(b.length - 6) -- Set size of payload
+
+				--record:write(all)
 
 				--self.tcp:send(b:toString())
 			else
@@ -463,11 +467,11 @@ function client:onTextMessage(packet)
 
 	local msg = event.message:stripHTML():unescapeHTML()
 
-	if msg[1] == "!" then
+	if msg[1] == "!" or msg[1] == "/" then
 		local user = event.actor
 		local args = msg:parseArgs()
-		local cmd = table.remove(args,1)
-		local info = self.commands[cmd:lower():sub(2)]
+		local cmd = table.remove(args,1):lower()
+		local info = self.commands[cmd:sub(2)]
 		
 		if info then
 			if info.master and not user:isMaster() then
@@ -477,7 +481,7 @@ function client:onTextMessage(packet)
 				local suc, err = pcall(info.callback, self, user, cmd, args, msg)
 				if not suc then
 					log.error("%s: %s (%q)", user, msg, err)
-					user:message("<b>%s</b> is currently <i>broken..</i>", cmd)
+					user:message("congrats, you broke the <b>%s</b> command", cmd)
 				end
 			end
 		else
@@ -625,6 +629,7 @@ end
 
 function COMMAND:alias(name)
 	self.client.commands[name] = setmetatable({
+		name = name,
 		callback = self.callback,
 		usage = self.usage,
 		help = self.help,
@@ -637,6 +642,7 @@ end
 function client:addCommand(cmd, callback)
 	self.commands = self.commands or {}
 	self.commands[cmd] = setmetatable({
+		name = cmd,
 		callback = callback,
 		client = self,
 		cmd = cmd,
