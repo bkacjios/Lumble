@@ -106,35 +106,6 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 end):alias("init")
 
 client:addCommand("roll", function(client, user, cmd, args, raw)
-	--[=[[
-	local dice = 20
-	local num = 1
-
-	if args[1] and args[1]:match("[Dd](%d+)") then
-		dice = args[1]:match("[Dd](%d+)")
-		num = args[2] and args[2]:match("[Xx]?(%d+)") or num
-	end
-
-	if args[1] and args[1]:match("[Xx](%d+)") then
-		num = args[1]:match("[Xx](%d+)")
-		dice = args[2] and args[2]:match("[Dd]?(%d+)") or dice
-	end
-
-	num = math.min(num, 100)
-
-	local results, total = math.roll(dice, num)
-
-	local outcome = ("and got <b><span style=\"color:#aa0000\">%d</span></b>"):format(total)
-
-	if num > 1 then
-		outcome = ([[<b>x %d</b><table>
-<tr><td><b>Rolls</b></td><td>: %s</td></tr>
-<tr><td><b>Min</b></td><td>: %d</td></tr>
-<tr><td><b>Max</b></td><td>: %d</td></tr>
-<tr><td><b>Avg</b></td><td>: %d</td></tr>
-<tr><td><b>Sum</b></td><td>: %d</td></tr></table>]]):format(num, table.concat(results, ", "), table.min(results), table.max(results), table.average(results), total)
-	end]]=]
-
 	local str = raw:sub(#cmd+2)
 
 	if #str <= 0 then
@@ -176,7 +147,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local shunting, err = math.shunting(str)
 
 	if not shunting then
-		local message = string.format("<p><b>error</b>: %s", err)
+		local message = string.format("<p><b><span style=\"color:#aa0000\">error</span></b>: %s", err)
 		log.info(message:stripHTML())
 		user:message(message)
 		return
@@ -187,15 +158,21 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local username = user:getName()
 	local name = name_convert[username] or username
 
-	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>\n", name, table.concatList(rolled_dice), total)
+	local message = {
+		string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>", name, table.concatList(rolled_dice), total)
+	}
 
-	message = message .. ("<table><tr><td><b>Equation</b></td><td>: %s</td></tr>"):format(string.nice_equation(str):gsub("%s", ""):gsub("%%", "%%%%"))
+	table.insert(message, ("<table><tr><td><b>Equation</b></td><td>: %s = %s</td></tr>"):format(string.nice_equation(str):gsub("%s", ""):gsub("%%", "%%%%"):escapeHTML(), total))
 
 	for dice, results in pairs(rolls) do
-		message = message .. ("<tr><td><b>%s</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", "))
+		table.insert(message, ("<tr><td><b>%s</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", ")))
 	end
 
-	message = message .. "</table>"
+	table.insert(message, "</table>")
+
+	message = table.concat(message, "\n")
+
+	print(message:stripHTML())
 
 	log.info(message:stripHTML())
 
