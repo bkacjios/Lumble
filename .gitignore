@@ -1,2 +1,6 @@
 config/dongerbot.key
 config/dongerbot.pem
+*.ogg
+data.vorbis
+*.so
+test.lua

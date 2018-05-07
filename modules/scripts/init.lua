@@ -73,37 +73,59 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 	local name = name_convert[username] or username
 
 	if args[1] == "list" then
-		local message = "Iinitiative order..<ol>"
+		local message = "<p>Iinitiative order<ol>"
 		for k,v in pairs(rolled_initiatives) do
 			message = message .. string.format("<li><b>%s</b>: %d</li>", v.name, v.roll + v.bonus)
 		end
 		message = message .. "</ol>"
+
+		if name == "Orange-Tang" then
+			rolled_initiatives = {}
+			did_roll = {}
+			user:getChannel():message(message)
+		else
+			user:message(message)
+		end
+		return
+	elseif args[1] == "clear" then
+		if name == "Orange-Tang" then
+			rolled_initiatives = {}
+			did_roll = {}
+			user:message("Initiative list cleared")
+		else
+			user:message("Only the DM can clear the initiative list")
+		end
+		return
+	end
+
+	if did_roll[name] then
+		user:message(string.format("<i>%s</i>, you already rolled your initiative..", name))
+		return
+	end
+	did_roll[name] = true
+	local bonus = (inititive[name] or 0)
+	local message = string.format("<p><b>%s</b> rolled a <b><span style=\"color:#aa0000\">%d</span></b> (%d + %d) initiative", name, total + bonus, total, bonus)
+	table.insert(rolled_initiatives, {name = name, roll = total, bonus = bonus})
+	table.sort(rolled_initiatives, function(a, b) return a.roll + a.bonus > b.roll + b.bonus end)
+	user:getChannel():message(message)
+end):setHelp("Roll for initiative"):setUsage("[clear, list]"):alias("init")
+
+client:addCommand("math", function(client, user, cmd, args, raw)
+	local str = raw:sub(#cmd+2)
+
+	local shunting, err = math.shunting(str)
+
+	if not shunting then
+		local message = string.format("<p><b><span style=\"color:#aa0000\">error</span></b>: %s", err)
+		log.info(message:stripHTML())
 		user:message(message)
 		return
 	end
 
-	if name == "Orange-Tang" then
-		local message = "Iinitiative order..<ol>"
-		for k,v in pairs(rolled_initiatives) do
-			message = message .. string.format("<li><b>%s</b>: %d</li>", v.name, v.roll + v.bonus)
-		end
-		message = message .. "</ol>"
-		rolled_initiatives = {}
-		did_roll = {}
-		user:getChannel():message(message)
-	else
-		if did_roll[name] then
-			user:message(string.format("<i>%s</i>, you already rolled your initiative..", name))
-			return
-		end
-		did_roll[name] = true
-		local bonus = (inititive[name] or 0)
-		local message = string.format("<p><b>%s</b> rolled a <b><span style=\"color:#aa0000\">%d</span></b> (%d + %d) initiative", name, total + bonus, total, bonus)
-		table.insert(rolled_initiatives, {name = name, roll = total, bonus = bonus})
-		table.sort(rolled_initiatives, function(a, b) return a.roll + a.bonus > b.roll + b.bonus end)
-		user:getChannel():message(message)
-	end
-end):alias("init")
+	local total = math.solve_shunting(shunting)
+
+	user:getChannel():message(string.format("<table><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", total))
+end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
 
 client:addCommand("roll", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
@@ -117,8 +139,10 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	end
 
 	local rolls = {}
+	local num_rolls = 0
 
 	str = string.gsub(str, "(%d+)[Dd](%d+)", function(num, dice)
+		num_rolls = num_rolls + num
 		local results, total = math.roll(dice, num)
 		local name = ("D%d"):format(dice)
 		rolls[name] = rolls[name] or {}
@@ -129,20 +153,15 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	end)
 
 	str = string.gsub(str, "[Dd](%d+)", function(dice)
+		num_rolls = num_rolls + 1
 		local name = ("D%d"):format(dice)
 		rolls[name] = rolls[name] or {}
-		local results, total = math.roll(dice, num)
+		local results, total = math.roll(dice, 1)
 		for k, result in pairs(results) do
 			table.insert(rolls[name], result)
 		end
 		return ("%s"):format(table.concat(results, "+"))
 	end)
-
-	local rolled_dice = {}
-
-	for dice, results in pairs(rolls) do
-		table.insert(rolled_dice, #results > 1 and ("%d%s"):format(#results, dice) or dice)
-	end
 
 	local shunting, err = math.shunting(str)
 
@@ -158,21 +177,23 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local username = user:getName()
 	local name = name_convert[username] or username
 
-	local message = {
-		string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>", name, table.concatList(rolled_dice), total)
-	}
-
-	table.insert(message, ("<table><tr><td><b>Equation</b></td><td>: %s = %s</td></tr>"):format(string.nice_equation(str):gsub("%s", ""):gsub("%%", "%%%%"):escapeHTML(), total))
+	local rolled_dice = {}
 
 	for dice, results in pairs(rolls) do
-		table.insert(message, ("<tr><td><b>%s</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", ")))
+		table.insert(rolled_dice, #results > 1 and ("%d%s"):format(#results, dice) or dice)
 	end
 
-	table.insert(message, "</table>")
+	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>", name, table.concatList(rolled_dice), total)
 
-	message = table.concat(message, "\n")
+	if num_rolls > 1 then
+		message = message .. ("\n<table><tr><td><b>Equation</b></td><td>: %s = %s</td></tr>"):format(string.nice_equation(str):gsub("%s", ""):gsub("%%", "%%%%"):escapeHTML(), total)
 
-	print(message:stripHTML())
+		for dice, results in pairs(rolls) do
+			message = message .. ("\n<tr><td><b>%s</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", "))
+		end
+
+		message = message .. "</table>"
+	end
 
 	log.info(message:stripHTML())
 
@@ -181,7 +202,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	else
 		user:getChannel():message(message)
 	end
-end):setHelp("Roll a X sided dice X amount of times"):alias("proll")
+end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll")
 
 client:addCommand("rollstats", function(client, user, cmd, args)
 	local stats = {}
@@ -200,11 +221,11 @@ client:addCommand("rollstats", function(client, user, cmd, args)
 	end
 
 	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#aa0000\">%s</span></b>", user:getName(), table.concat(stats, ", "))
-end):setHelp("Rolls 4 D6, 6 times, and takes the highest 3 values")
+end):setHelp("Rolls 4D6 and takes the highest 3 values, 6 times")
 
 client:addCommand("help", function(client, user, cmd, args, raw)
 	local debug = args[1] == "user"
-	local message = "<p>Here's a list of commands<br/>"
+	local message = "<table><tr><th>command</th><th>arguments</th><th>help</th></tr>"
 
 	local commands = {}
 
@@ -216,11 +237,12 @@ client:addCommand("help", function(client, user, cmd, args, raw)
 
 	for k, info in pairs(commands) do
 		if ((info.master and (not debug and user:isMaster())) or not info.master) then
-			message = message .. "<b>" .. cmd[1] .. info.name .. "</b>" .. (info.help and (" - <i>" .. info.help:escapeHTML() .. "</i>") or "") .. "<br/>"
+			message = message .. ("<tr><td><b>%s%s</b></td><td>%s</td><td>%s</td></tr>"):format(cmd[1], info.name, info.usage:escapeHTML(), info.help:escapeHTML())
+			--message = message .. "<b>" .. cmd[1] .. info.name .. "</b>" .. (info.help and (" - <i>" .. info.help:escapeHTML() .. "</i>") or "") .. "<br/>"
 		end
 	end
-	user:message(message)
-end):setHelp("Display a list of all commands"):alias("commands"):alias("?")
+	user:message(message .. "</table>")
+end):setHelp("List all commands"):alias("commands"):alias("?")
 
 client:addCommand("about", function(client, user, cmd, args, raw)
 	local message = [[<b>LuaBot</b>
@@ -231,7 +253,7 @@ end, "Get some information about LuaBot")
 
 client:addCommand("play", function(client, user, cmd, args, raw)
 	client:playOgg(("audio/%s.ogg"):format(args[1]), tonumber(args[2]))
-end):setHelp("Play an audio file")
+end):setHelp("Play an audio file"):setUsage("<file> [volume]")
 
 local restricted = {}
 
@@ -250,7 +272,7 @@ client:addCommand("restrict", function(client, user, cmd, args, raw)
 		user:getChannel():message("%s is no longer restricted from joining %s", name, channel:getName())
 		restricted[path][name] = false
 	end
-end):setHelp("Restrict a user from joining your current channel")
+end):setHelp("Restrict a user from joining your current channel"):setUsage("<username>")
 
 client:hook("OnUserChannel", "LuaBot - User Restrict", function(client, event)
 	local user = event.user
@@ -274,7 +296,7 @@ client:addCommand("volume", function(client, user, cmd, args, raw)
 	else
 		user:message(("Volume level: <b>%i</b>"):format(client:getVolume()*100))
 	end
-end):setHelp("Set the volume of any playing audio")
+end):setHelp("Set the volume of any playing audio"):setUsage("<volume>")
 
 local playlist = {}
 local track = 0
@@ -332,7 +354,7 @@ client:addCommand("dnd", function(client, user, cmd, args, raw)
 		track = 0
 		playPlaylist(client)
 	end
-end):setHelp("Set mood music for D&D"):alias("mood")
+end):setHelp("Set music for D&D"):setUsage("<mood>"):alias("mood")
 
 client:addCommand("fade", function(client, user, cmd, args, raw)
 	client.playing:fadeOut(tonumber(args[1]) or 5)

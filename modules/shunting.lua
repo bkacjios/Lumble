@@ -19,15 +19,15 @@ local operator = {
 		associativity = "left",
 		method = function(a, b) return a <= b and 1 or 0 end,
 	},
-	["!="] = {
-		precedence = 0,
-		associativity = "left",
-		method = function(a, b) return a ~= b and 1 or 0 end,
-	},
 	["=="] = {
 		precedence = 0,
 		associativity = "left",
 		method = function(a, b) return a == b and 1 or 0 end,
+	},
+	["!="] = {
+		precedence = 0,
+		associativity = "left",
+		method = function(a, b) return a ~= b and 1 or 0 end,
 	},
 	["<>"] = {
 		precedence = 0,
@@ -118,7 +118,8 @@ function string.split(str, separator, withpattern)
 end
 
 function string.nice_equation(expr)
-	local oper = {"[%w%d%.]+", "%+", "%-", "%*", "%/", "%^", "%%", "%(", "%)"}
+	-- "[%d]+%.efpx%-[%d]+", 
+	local oper = {"%+", "[%w%.%-]+", "[^e]%-", "%*", "%/", "%^", "%%", "%(", "%)", ","}
 	for _, o in ipairs(oper) do
 		expr = expr:gsub(o, " %1 ")
 	end
@@ -129,12 +130,7 @@ function math.shunting(str)
 	local queue = {}
 	local stack = {}
 
-	print("bad string", str)
-
 	local nice = string.nice_equation(str)
-
-	print("nicified string", nice)
-
 	local tokens = nice:split(" ")
 
 	local rep_num = 0
@@ -225,10 +221,7 @@ function math.solve_shunting(tbl)
 	for k, token in ipairs(tbl) do
 		if operator[token] then
 			local right = table.remove(stack)
-			local left = table.remove(stack)
-			if not left then
-				left = 0
-			end
+			local left = table.remove(stack) or 0
 			local func = operator[token].method
 			table.insert(stack, func(left, right))
 		elseif functions[token] then
@@ -245,8 +238,8 @@ function math.solve_shunting(tbl)
 
 	return table.remove(stack)
 end
-
-local expression = "(1*2)+4/5" 
+ 
+local expression = "-min(0xf.0e0p1,0x12p2)+(2e-3+-5*(59*1+4)/2) + 43e2^2"
 
 local stack, err = math.shunting(expression)
 
@@ -259,4 +252,4 @@ table.foreach(stack, print)
 
 local total = math.solve_shunting(stack)
 
-print(expression, total)
+print(expression .. " = " .. total)

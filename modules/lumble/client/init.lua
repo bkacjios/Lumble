@@ -646,6 +646,8 @@ function client:addCommand(cmd, callback)
 		callback = callback,
 		client = self,
 		cmd = cmd,
+		help = "",
+		usage = "",
 	}, COMMAND)
 	return self.commands[cmd]
 end
