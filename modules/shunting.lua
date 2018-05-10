@@ -92,11 +92,23 @@ local operator = {
 		method = function(a, b) return a + b end,
 		args = 2,
 	},
+	["up"] = {
+		precedence = 2,
+		associativity = "right",
+		method = function(a) return a end,
+		args = 1,
+	},
 	["-"] = {
 		precedence = 4,
 		associativity = "left",
 		method = function(a, b) return a - b end,
 		args = 2,
+	},
+	["um"] = {
+		precedence = 2,
+		associativity = "right",
+		method = function(a) return -a end,
+		args = 1,
 	},
 	["*"] = {
 		precedence = 3,
@@ -118,13 +130,13 @@ local operator = {
 	},
 	["~"] = {
 		precedence = 2,
-		associativity = "left",
+		associativity = "right",
 		method = function(a) return bit.bnot(a) end,
 		args = 1,
 	},
 	["!"] = {
 		precedence = 1,
-		associativity = "right",
+		associativity = "left",
 		method = function(a) return math.factorial(a) end,
 		args = 1,
 	},
@@ -134,6 +146,11 @@ local operator = {
 		method = function(a, b) return a ^ b end,
 		args = 2,
 	},
+}
+
+local translate_tokens = {
+	["um"] = '-',
+	["up"] = '+',
 }
 
 local functions = {
@@ -197,14 +214,17 @@ local function readToken(buf)
 	-- Check if the token is a number
 	if tonumber(peek) then
 		return readNumber(buf)
-	-- Check 2 character operators first
+	-- Check 3 character operators first
+	elseif operator[buf:peek(3)] then
+		return buf:readLen(3)
+	-- Check 2 character operators second
 	elseif operator[buf:peek(2)] then
 		return buf:readLen(2)
-	-- Then check single character operators
-	elseif operator[peek] or peek == '(' or peek == ')' or peek == ',' or peek == ' ' then
+	-- Check 1 character operators last
+	elseif operator[peek] or peek == '(' or peek == ')' or peek == ',' then
 		return buf:readChar()
 	else
-		-- Fall back to a function call
+		-- Fall back to a function name
 		return buf:readPattern("%a+")
 	end
 end
@@ -255,7 +275,7 @@ function math.postfix(str)
 					break
 				else
 					table.insert(queue, pop)
-					if #stack <= 0 then return false, ("mismatched parentheses, expecting '(' got '%s'"):format(pop) end
+					if #stack <= 0 then return false, "mismatched parentheses, expecting '('" end
 				end
 			end
 			if #stack > 0 and functions[stack[#stack]] then
@@ -263,21 +283,33 @@ function math.postfix(str)
 				table.insert(queue, pop)
 			end
 		elseif operator[token] then
+			local valid = not tonumber(prev_token) and prev_token ~= ')' and prev_token ~= '!'
+
 			if token == '~' and not tonumber(buf:peek(1)) then
 				return false, "operator '~' needs a number after it"
-			elseif token == '!' then
-				if prev_token ~= ')' and prev_token ~= '!' and not tonumber(prev_token) then
-					if prev_token then
-						return false, ("unexpected token '%s' after '%s', expected number"):format(token, prev_token)
-					else
-						return false, ("unexpected token '%s', expected number"):format(token)
-					end
+			elseif token == '!' and valid then
+				if prev_token then
+					return false, ("unexpected token '%s' after '%s', expected number"):format(token, prev_token)
+				else
+					return false, ("unexpected token '%s', expected number"):format(token)
+				end
+			elseif not prev_token or valid then
+				if token == '+' then
+					token = "up"
+				elseif token == '-' then
+					token = "um"
+				else
+					return false, ("invalid use of operator '%s' near '%s'"):format(token, prev_token)
 				end
 			end
 
+			local tprec = operator[token].precedence
+			local rassoc = operator[token].associativity
+
 			while #stack > 0 and operator[stack[#stack]] do
-				local op = stack[#stack]
-				if (operator[op].associativity ~= "right" and operator[token].precedence == operator[op].precedence) or operator[token].precedence > operator[op].precedence then
+				local pop = stack[#stack]
+				local pprec = operator[pop].precedence
+				if tprec > pprec or (tprec == pprec and rassoc ~= "right") then
 					table.insert(queue, table.remove(stack))
 				else
 					break
@@ -288,19 +320,84 @@ function math.postfix(str)
 			return false, ("unexpected token '%s'"):format(token)
 		end
 		prev_token = token
-		::continue::
 	end
 	while #stack > 0 do
 		local pop = table.remove(stack)
-		if pop == "(" then
-			return false, "mismatched parentheses, expecting ')' asd"
-		elseif pop == ")" then
-			return false, "mismatched parentheses, expecting '(' asd"
+		if pop == '(' then
+			return false, "mismatched parentheses, expecting ')'"
+		elseif pop == ')' then
+			return false, "mismatched parentheses, expecting '('"
 		else
 			table.insert(queue, pop)
 		end
 	end
 	return queue
+end
+
+local function next_op(tbl, pos)
+	for i=pos+1, #tbl do
+		if operator[tbl[i]] then
+			return tbl[i]
+		end
+	end
+end
+
+local function shouldParen(op, next_op)
+	if next_op == '-' then
+		return true
+	elseif next_op == '*' or next_op == '/' then
+		if op == '+' or op == '-' then
+			return true
+		end
+	end
+	return false
+end
+
+local node = {}
+node.__index = node
+
+local function newOPNode(operator, left, right)
+	return setmetatable({
+		kind = "operator",
+		operator = operator,
+		left = left,
+		right = right,
+	}, node)
+end
+
+function math.postfix_to_infix(tbl)
+	local stack = {}
+	local first = false
+	for k, token in ipairs(tbl) do
+		local tnice = translate_tokens[token] or token
+		if tonumber(token) then
+			table.insert(stack, token)
+		elseif operator[token] then
+			if operator[token].args <= 1 then
+				local pop1 = table.remove(stack)
+				if operator[token].associativity == "left" then
+					table.insert(stack, ("(%s%s)"):format(pop1, tnice))
+				else
+					table.insert(stack, ("(%s%s)"):format(tnice, pop1))
+				end
+			else
+				local pop1 = table.remove(stack)
+				local pop2 = table.remove(stack)
+				table.insert(stack, ("(%s %s %s)"):format(pop2, tnice, pop1))
+			end
+		elseif functions[token] then
+			if functions[token].args <= 1 then
+				local pop1 = table.remove(stack)
+				table.insert(stack, ("%s(%s)"):format(tnice, pop1))
+			else
+				local pop1 = table.remove(stack)
+				local pop2 = table.remove(stack)
+				table.insert(stack, ("%s(%s, %s)"):format(tnice, pop2, pop1))
+			end
+		end
+	end
+
+	return table.concat(stack)
 end
 
 function math.solve_postfix(tbl)
@@ -309,15 +406,14 @@ function math.solve_postfix(tbl)
 		if operator[token] then
 			local args = {}
 			for i=1,operator[token].args do
-				local t = table.remove(stack) or 0
-				table.insert(args, 1, t)
+				table.insert(args, 1, table.remove(stack))
 			end
 			local func = operator[token].method
 			table.insert(stack, func(unpack(args)))
 		elseif functions[token] then
 			local args = {}
 			for i=1,functions[token].args do
-				table.insert(args, table.remove(stack))
+				table.insert(args, 1, table.remove(stack))
 			end
 			local func = functions[token].method
 			table.insert(stack, func(unpack(args)))
@@ -329,10 +425,13 @@ function math.solve_postfix(tbl)
 	return table.remove(stack)
 end
 
---local expression = "4! + 1"
-local expression = "-min(0xf.0e0p1,0x12p2)+(2e-3+-5*(59*1+4)/2)"
+--local expression = "random(1,5)"
+--local expression = "-min(0xf.0e0p1,0x12p2)!+(2e-3+-5*(59*1+4)/2)"
 --local expression = "3e1 + 1"
-local expression = "1 << 2! + 4"
+--local expression = "-sqrt(1 << 4)!"
+--local expression = "120 % 60"
+local expression = "(8+2)*2+4"
+--local expression = "23--4+4^3/2*2"
 
 local stack, err = math.postfix(expression)
 
@@ -346,3 +445,5 @@ table.foreach(stack, print)
 local total = math.solve_postfix(stack)
 
 print(expression .. " = " .. total)
+
+print(math.postfix_to_infix(stack))

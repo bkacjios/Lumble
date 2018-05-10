@@ -113,19 +113,51 @@ end):setHelp("Roll for initiative"):setUsage("[clear, list]"):alias("init")
 client:addCommand("math", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
 
-	local shunting, err = math.shunting(str)
+	local stack, err = math.postfix(str)
 
-	if not shunting then
+	if not stack then
 		local message = string.format("<p><b><span style=\"color:#aa0000\">error</span></b>: %s", err)
 		log.info(message:stripHTML())
 		user:message(message)
 		return
 	end
 
-	local total = math.solve_shunting(shunting)
+	local equation = math.postfix_to_infix(stack)
+	local total = math.solve_postfix(stack)
 
-	user:getChannel():message(string.format("<table><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", total))
+	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
+
+local function rgbToHex(r, g, b)
+	return bit.lshift(r, 16) + bit.lshift(g, 8) + bit.lshift(b, 0)
+end
+
+local function hsvToRgb(h, s, v, a)
+	local r, g, b
+	a = a or 255
+
+	local i = math.floor(h * 6)
+	local f = h * 6 - i
+	local p = v * (1 - s)
+	local q = v * (1 - f * s)
+	local t = v * (1 - (1 - f) * s)
+
+	i = i % 6
+
+	if i == 0 then r, g, b = v, t, p
+	elseif i == 1 then r, g, b = q, v, p
+	elseif i == 2 then r, g, b = p, v, t
+	elseif i == 3 then r, g, b = p, q, v
+	elseif i == 4 then r, g, b = t, p, v
+	elseif i == 5 then r, g, b = v, p, q
+	end
+
+	return r * 255, g * 255, b * 255, a
+end
+
+local function countSubStr(s1, s2)
+	return select(2, s1:gsub(s2, ""))
+end
 
 client:addCommand("roll", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
@@ -138,11 +170,20 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		str = "min(d20, d20)"
 	end
 
+	if not str:match("%d+[Dd]%d+") and not str:match("[Dd]%d+") then
+		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: Invalid roll"
+		log.info(message:stripHTML())
+		user:message(message)
+		return
+	end
+
+	str = str:escapeHTML()
+
 	local rolls = {}
-	local num_rolls = 0
+	local orig_str = str
+	local roll_colors = {}
 
 	str = string.gsub(str, "(%d+)[Dd](%d+)", function(num, dice)
-		num_rolls = num_rolls + num
 		local results, total = math.roll(dice, num)
 		local name = ("D%d"):format(dice)
 		rolls[name] = rolls[name] or {}
@@ -153,10 +194,9 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	end)
 
 	str = string.gsub(str, "[Dd](%d+)", function(dice)
-		num_rolls = num_rolls + 1
+		local results, total = math.roll(dice, 1)
 		local name = ("D%d"):format(dice)
 		rolls[name] = rolls[name] or {}
-		local results, total = math.roll(dice, 1)
 		for k, result in pairs(results) do
 			table.insert(rolls[name], result)
 		end
@@ -166,12 +206,13 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local stack, err = math.postfix(str)
 
 	if not stack then
-		local message = string.format("<p><b><span style=\"color:#aa0000\">error</span></b>: %s", err)
+		local message = string.format("<p><b><span style=\"color:#aa0000\">Error</span></b>: %s", err)
 		log.info(message:stripHTML())
 		user:message(message)
 		return
 	end
 
+	local equation = math.postfix_to_infix(stack)
 	local total = math.solve_postfix(stack)
 
 	local username = user:getName()
@@ -183,13 +224,16 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		table.insert(rolled_dice, #results > 1 and ("%d%s"):format(#results, dice) or dice)
 	end
 
-	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>", name, table.concatList(rolled_dice), total)
+	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>", name, orig_str, total)
 
 	if #stack > 2 then
-		message = message .. ("\n<table><tr><td><b>Equation</b></td><td>: %s = %s</td></tr>"):format(str:gsub("%s", ""):gsub("%%", "%%%%"):escapeHTML(), total)
+		message = message .. ("\n<table><tr><td><b>Equation</b></td><td>: %s</td></tr>"):format(equation:gsub("%%", "%%%%"))
+		message = message .. ("\n<tr><td><b>Solution</b></td><td>: %s</td></tr>"):format(total)
 
+		local roll_num = 0
 		for dice, results in pairs(rolls) do
-			message = message .. ("\n<tr><td><b>%s</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", "))
+			message = message .. ("\n<tr><td><b>%s Rolls</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", "))
+			roll_num = roll_num + 1
 		end
 
 		message = message .. "</table>"

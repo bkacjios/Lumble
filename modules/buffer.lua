@@ -60,6 +60,14 @@ local function Buffer(length)
 	return setmetatable(meta, BUFFER)
 end
 
+function BUFFER:setDynamic(b)
+	self.dynamic = b
+end
+
+function BUFFER:getDynamic()
+	return self.dynamic
+end
+
 function BUFFER:__tostring()
 	return ("Buffer[%d/%d]"):format(self.length, self.capacity)
 end
@@ -78,7 +86,7 @@ end
 
 function BUFFER:toString(pos, len)
 	pos = pos and pos - 1 or 0
-	len = len or self.length
+	len = len or (self.length - pos)
 	return string(self.buffer + pos, len)
 end
 
@@ -97,7 +105,6 @@ function BUFFER:write(str)
 
 	if self.length + len > self.capacity then
 		if self.dynamic then
-			local pow = 2
 			local mult = (self.length + len) / self.capacity
 
 			if ceil(mult) - mult < 0.5 then
@@ -225,15 +232,6 @@ function BUFFER:readInt()
 end
 
 function BUFFER:writeMumbleVarInt(int)
-	--[[if (band(int, 0x8000000000000000LL) and bnot(int) < 0x100000000LL) then
-		int = bnot(int)
-		if (int <= 0x3) then
-			self:writeByte(bor(0xFC, int))
-		else
-			self:writeByte(0xF8)
-		end
-	end]]
-
 	if (int < 0x80) then
 		self:writeByte(int)
 		return 1
