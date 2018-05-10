@@ -47,20 +47,20 @@ client:addCommand("summon", function(client, user, cmd, args, raw)
 	client.me:move(user:getChannel())
 end):setHelp("Bring me to your channel")
 
-local inititive = {
-	["Amer"] = 4,
-	["Atsu"] = 4,
-	["Bkacjios"] = 0,
-	["Paste"] = 4,
-	["Will"] = 1,
-}
-
 local name_convert = {
 	["Amer"] = "Sancho",
 	["Atsu"] = "Drak",
 	["Bkacjios"] = "Bhord",
 	["Paste"] = "Ranger Rick",
 	["Will"] = "Hrangus",
+}
+
+local inititive = {
+	["Sancho"] = 5,
+	["Drak"] = 4,
+	["Bhord"] = 0,
+	["Ranger Rick"] = 4,
+	["Hrangus"] = 1,
 }
 
 local did_roll = {}
@@ -163,16 +163,16 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		return ("%s"):format(table.concat(results, "+"))
 	end)
 
-	local shunting, err = math.shunting(str)
+	local stack, err = math.postfix(str)
 
-	if not shunting then
+	if not stack then
 		local message = string.format("<p><b><span style=\"color:#aa0000\">error</span></b>: %s", err)
 		log.info(message:stripHTML())
 		user:message(message)
 		return
 	end
 
-	local total = math.solve_shunting(shunting)
+	local total = math.solve_postfix(stack)
 
 	local username = user:getName()
 	local name = name_convert[username] or username
@@ -185,8 +185,8 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 
 	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>", name, table.concatList(rolled_dice), total)
 
-	if num_rolls > 1 then
-		message = message .. ("\n<table><tr><td><b>Equation</b></td><td>: %s = %s</td></tr>"):format(string.nice_equation(str):gsub("%s", ""):gsub("%%", "%%%%"):escapeHTML(), total)
+	if #stack > 2 then
+		message = message .. ("\n<table><tr><td><b>Equation</b></td><td>: %s = %s</td></tr>"):format(str:gsub("%s", ""):gsub("%%", "%%%%"):escapeHTML(), total)
 
 		for dice, results in pairs(rolls) do
 			message = message .. ("\n<tr><td><b>%s</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", "))

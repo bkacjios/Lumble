@@ -76,9 +76,10 @@ function BUFFER:__index(key)
 	return BUFFER[key]
 end
 
-function BUFFER:toString(i, j)
-	local offset = i and i - 1 or 0
-	return string(self.buffer + offset, (j or self.length) - offset)
+function BUFFER:toString(pos, len)
+	pos = pos and pos - 1 or 0
+	len = len or self.length
+	return string(self.buffer + pos, len)
 end
 
 function BUFFER:clear()
@@ -121,10 +122,16 @@ function BUFFER:write(str)
 	end
 end
 
+function BUFFER:peek(len)
+	len = max(1, len or 1)
+	len = min(self.length - self.position, len)
+	return string(self.buffer + self.position, len)
+end
+
 function BUFFER:readLen(len)
 	len = max(1, len or 1)
 	len = min(self.length - self.position, len)
-	local ret = string(self.buffer + self.position, len)
+	local ret = self:peek(len)
 	self.position = self.position + len
 	return ret
 end
@@ -380,6 +387,13 @@ function BUFFER:readNullString()
 	local null = self:toString(self.position + 1):find('%z')
 	if null then
 		return self:readLen(null)
+	end
+end
+
+function BUFFER:readPattern(pattern)
+	local _, pos = self:toString(self.position + 1):find(pattern)
+	if pos then
+		return self:readLen(pos)
 	end
 end
 
