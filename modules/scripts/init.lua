@@ -6,6 +6,7 @@ local ev = require("ev")
 local lfs = require("lfs")
 local config = require("config")
 require("shunting")
+require("extensions.io")
 
 local params = {
 	mode = "client",
@@ -122,42 +123,12 @@ client:addCommand("math", function(client, user, cmd, args, raw)
 		return
 	end
 
-	local equation = math.postfix_to_infix(stack)
+	local node = math.postfix_to_infix(stack)
+	local equation = math.infix_to_string(node)
 	local total = math.solve_postfix(stack)
 
 	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
-
-local function rgbToHex(r, g, b)
-	return bit.lshift(r, 16) + bit.lshift(g, 8) + bit.lshift(b, 0)
-end
-
-local function hsvToRgb(h, s, v, a)
-	local r, g, b
-	a = a or 255
-
-	local i = math.floor(h * 6)
-	local f = h * 6 - i
-	local p = v * (1 - s)
-	local q = v * (1 - f * s)
-	local t = v * (1 - (1 - f) * s)
-
-	i = i % 6
-
-	if i == 0 then r, g, b = v, t, p
-	elseif i == 1 then r, g, b = q, v, p
-	elseif i == 2 then r, g, b = p, v, t
-	elseif i == 3 then r, g, b = p, q, v
-	elseif i == 4 then r, g, b = t, p, v
-	elseif i == 5 then r, g, b = v, p, q
-	end
-
-	return r * 255, g * 255, b * 255, a
-end
-
-local function countSubStr(s1, s2)
-	return select(2, s1:gsub(s2, ""))
-end
 
 client:addCommand("roll", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
@@ -177,11 +148,8 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		return
 	end
 
-	str = str:escapeHTML()
-
 	local rolls = {}
 	local orig_str = str
-	local roll_colors = {}
 
 	str = string.gsub(str, "(%d+)[Dd](%d+)", function(num, dice)
 		local results, total = math.roll(dice, num)
@@ -212,7 +180,8 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		return
 	end
 
-	local equation = math.postfix_to_infix(stack)
+	local node = math.postfix_to_infix(stack)
+	local equation = math.infix_to_string(node)
 	local total = math.solve_postfix(stack)
 
 	local username = user:getName()
@@ -230,10 +199,8 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		message = message .. ("\n<table><tr><td><b>Equation</b></td><td>: %s</td></tr>"):format(equation:gsub("%%", "%%%%"))
 		message = message .. ("\n<tr><td><b>Solution</b></td><td>: %s</td></tr>"):format(total)
 
-		local roll_num = 0
 		for dice, results in pairs(rolls) do
 			message = message .. ("\n<tr><td><b>%s Rolls</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", "))
-			roll_num = roll_num + 1
 		end
 
 		message = message .. "</table>"
@@ -282,11 +249,21 @@ client:addCommand("help", function(client, user, cmd, args, raw)
 	for k, info in pairs(commands) do
 		if ((info.master and (not debug and user:isMaster())) or not info.master) then
 			message = message .. ("<tr><td><b>%s%s</b></td><td>%s</td><td>%s</td></tr>"):format(cmd[1], info.name, info.usage:escapeHTML(), info.help:escapeHTML())
-			--message = message .. "<b>" .. cmd[1] .. info.name .. "</b>" .. (info.help and (" - <i>" .. info.help:escapeHTML() .. "</i>") or "") .. "<br/>"
 		end
 	end
 	user:message(message .. "</table>")
 end):setHelp("List all commands"):alias("commands"):alias("?")
+
+client:addCommand("source", function(client, user, cmd, args, raw)
+	local command = client:getCommand(args[1])
+	if command then
+		local info = debug.getinfo(command.callback)
+		local f, err = io.open(info.short_src, "r")
+		local source = f:readLines(info.linedefined, info.lastlinedefined)
+		local fixed = source:gsub("%%", "%%%%"):escapeHTML():gsub("\r", "<br/>"):gsub("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+		user:message("<p>" .. fixed .. "</p>")
+	end
+end)
 
 client:addCommand("about", function(client, user, cmd, args, raw)
 	local message = [[<b>LuaBot</b>

@@ -1,6 +1,32 @@
 local bit = require("bit")
 
 local permission = {
+	type = {
+		Text = 0,
+		Permission = 1,
+		SuperUser = 2,
+		ChannelName = 3,
+		TextTooLong = 4,
+		H9K = 5,
+		TemporaryChannel = 6,
+		MissingCertificate = 7,
+		UserName = 8,
+		ChannelFull = 9,
+		NestingLimit = 10,
+	},
+	type_name = {
+		[0] = "Text",
+		[1] = "Permission",
+		[2] = "SuperUser",
+		[3] = "ChannelName",
+		[4] = "TextTooLong",
+		[5] = "H9K",
+		[6] = "TemporaryChannel",
+		[7] = "MissingCertificate",
+		[8] = "UserName",
+		[9] = "ChannelFull",
+		[10] = "NestingLimit",
+	},
 	enum = {
 		NONE = 0x0,
 		WRITE = 0x1,
@@ -24,7 +50,7 @@ local permission = {
 		CACHED = 0x8000000,
 		ALL = 0xf07ff,
 	},
-	name = {
+	enum_name = {
 		[0x0] = "None",
 		[0x1] = "Write",
 		[0x2] = "Traverse",
@@ -46,7 +72,11 @@ local permission = {
 }
 
 function permission.getName(id)
-	return permission.name[id] or ("INVALID PERMISSION: " .. id)
+	return permission.enum_name[id] or "Unknown"
+end
+
+function permission.getTypeName(id)
+	return permission.type_name[id] or "NONE"
 end
 
 function permission.getDefaults()

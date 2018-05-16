@@ -26,7 +26,10 @@ function packet.new(id, data)
 end
 
 function packet:__index(key)
-	return rawget(self, "proto")[key] or rawget(self, key) or packet[key]
+	local raw1 = rawget(self, "proto")[key]
+	local raw2 = rawget(self, key)
+	local raw3 = packet[key]
+	return (raw1 ~= nil and raw1 or (raw2 ~= nil and raw2 or (raw3 ~= nil and raw3)))
 end
 
 function packet:__tostring()

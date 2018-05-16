@@ -5,6 +5,8 @@ local user = require("lumble.server.user")
 local packet = require("lumble.packet")
 local proto = require("lumble.proto")
 
+local permission = require("lumble.permission")
+
 local buffer = require("buffer")
 local socket = require("socket")
 local ssl = require("ssl")
@@ -168,6 +170,12 @@ function server:onUserDisconnect(user, err)
 	end
 end
 
+function server:updateUserState(user)
+	for session, other in pairs(self.users) do
+		other:send(user:getStatePacket())
+	end
+end
+
 function server:syncUser(user)
 	for id, channel in pairs(self.channels) do
 		local state = packet.new("ChannelState")
@@ -185,15 +193,40 @@ function server:syncUser(user)
 	sync:set("session", user:getSession())
 	sync:set("max_bandwidth", self.config.max_bandwidth)
 	sync:set("welcome_text", self.config.welcome_text)
+	sync:set("permissions", permission.enum.ALL)
 	user:send(sync)
 end
 
 function server:checkUserState(user, packet)
+	table.foreach(packet, print)
+	if packet.self_mute ~= nil then
+		user:set("self_mute", packet.self_mute)
+	end
+	if packet.self_deaf ~= nil then
+		user:set("self_deaf", packet.self_deaf)
+	end
 	if packet.channel_id then
-		if user:hasPermission(permission.MOVE) then
-			
+		if user:hasPermission(permission.enum.MOVE) and self.channels[packet.channel_id] then
+			user:set("channel_id", packet.channel_id)
+			user:set("actor", user.session)
 		end
 	end
+	self:updateUserState(user)
+end
+
+function server:checkTextMessage(user, packet)
+	print(user, "checkTextMessage", packet)
+	table.foreach(packet, print)
+	if packet.channel_id then
+		
+	elseif packet.session then
+
+	end
+end
+
+function server:checkPermissionQuery(user, packet)
+	print(user, "checkPermissionQuery", packet)
+	table.foreach(packet, print)
 end
 
 function server:getHooks()
@@ -209,7 +242,11 @@ function server:getChannels()
 end
 
 function server:getChannel(path)
-	return self.channels[0](path)
+	if type(path) == "string" then
+		return self.channels[0](path)
+	elseif type(path) == "number" then
+		return self.channels[path]
+	end
 end
 
 return server

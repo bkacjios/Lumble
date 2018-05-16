@@ -495,7 +495,11 @@ function client:onTextMessage(packet)
 end
 
 function client:onPermissionDenied(packet)
-	log.warn("PermissionDenied: %s", permission.getName(packet.permission))
+	if packet.type == permission.type.Permission then
+		log.warn("PermissionDenied: %s", permission.getName(packet.id))
+	else
+		log.warn("PermissionDenied: %s", permission.getTypeName(packet.type))
+	end
 	self:hookCall("OnPermissionDenied")
 end
 
@@ -654,6 +658,10 @@ end
 
 function client:getCommands()
 	return self.commands
+end
+
+function client:getCommand(cmd)
+	return self.commands[cmd]
 end
 
 return client

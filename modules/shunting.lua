@@ -7,7 +7,7 @@ function math.factorial(n)
 	return n
 end
 
-local operator = {
+local operators = {
 	[">"] = {
 		precedence = 6,
 		associativity = "left",
@@ -215,13 +215,13 @@ local function readToken(buf)
 	if tonumber(peek) then
 		return readNumber(buf)
 	-- Check 3 character operators first
-	elseif operator[buf:peek(3)] then
+	elseif operators[buf:peek(3)] then
 		return buf:readLen(3)
 	-- Check 2 character operators second
-	elseif operator[buf:peek(2)] then
+	elseif operators[buf:peek(2)] then
 		return buf:readLen(2)
 	-- Check 1 character operators last
-	elseif operator[peek] or peek == '(' or peek == ')' or peek == ',' then
+	elseif operators[peek] or peek == '(' or peek == ')' or peek == ',' then
 		return buf:readChar()
 	else
 		-- Fall back to a function name
@@ -282,7 +282,7 @@ function math.postfix(str)
 				local pop = table.remove(stack)
 				table.insert(queue, pop)
 			end
-		elseif operator[token] then
+		elseif operators[token] then
 			local valid = not tonumber(prev_token) and prev_token ~= ')' and prev_token ~= '!'
 
 			if token == '~' and not tonumber(buf:peek(1)) then
@@ -298,17 +298,17 @@ function math.postfix(str)
 					token = "up"
 				elseif token == '-' then
 					token = "um"
-				else
+				elseif token ~= '~' then
 					return false, ("invalid use of operator '%s' near '%s'"):format(token, prev_token)
 				end
 			end
 
-			local tprec = operator[token].precedence
-			local rassoc = operator[token].associativity
+			local tprec = operators[token].precedence
+			local rassoc = operators[token].associativity
 
-			while #stack > 0 and operator[stack[#stack]] do
+			while #stack > 0 and operators[stack[#stack]] do
 				local pop = stack[#stack]
-				local pprec = operator[pop].precedence
+				local pprec = operators[pop].precedence
 				if tprec > pprec or (tprec == pprec and rassoc ~= "right") then
 					table.insert(queue, table.remove(stack))
 				else
@@ -336,7 +336,7 @@ end
 
 local function next_op(tbl, pos)
 	for i=pos+1, #tbl do
-		if operator[tbl[i]] then
+		if operators[tbl[i]] then
 			return tbl[i]
 		end
 	end
@@ -353,62 +353,138 @@ local function shouldParen(op, next_op)
 	return false
 end
 
-local node = {}
-node.__index = node
+do
 
-local function newOPNode(operator, left, right)
-	return setmetatable({
+local function newNumberNode(value)
+	return {
+		kind = "number",
+		value = value,
+	}
+end
+
+local function newOPNode(token, left, right)
+	local info = operators[token]
+
+	return {
 		kind = "operator",
-		operator = operator,
+		operator = translate_tokens[token] or token,
+		precedence = info.precedence,
 		left = left,
 		right = right,
-	}, node)
+	}
+end
+
+local function newUnaryNode(token, node)
+	local info = operators[token]
+	return {
+		kind = "unary",
+		operator = translate_tokens[token] or token,
+		precedence = info.precedence,
+		associativity = info.associativity,
+		node = node,
+	}
+end
+
+local function newFunctionNode(func, arg1, arg2)
+	return {
+		kind = "function",
+		func = func,
+		arg1 = arg1,
+		arg2 = arg2,
+	}
+end
+
+local function needParensOnLeft(node)
+	if node.left.kind ~= "operator" and node.left.kind ~= "unary" then
+		return false
+	end
+	if node.operator == "*" or node.operator == "/" or node.operator == "^" then
+		return node.operator ~= node.left.operator
+	end
+	return node.left.precedence < node.precedence
+end
+    
+local function needParensOnRight(node)
+	if node.right.kind == "number" or node.right.kind == "unary" then
+		return false
+	end
+	if node.operator == "+" or node.operator == "*" then
+		return node.right.precedence < node.precedence
+	end
+	return node.right.precedence <= node.precedence
 end
 
 function math.postfix_to_infix(tbl)
 	local stack = {}
 	local first = false
 	for k, token in ipairs(tbl) do
-		local tnice = translate_tokens[token] or token
 		if tonumber(token) then
-			table.insert(stack, token)
-		elseif operator[token] then
-			if operator[token].args <= 1 then
+			table.insert(stack, newNumberNode(token))
+		elseif operators[token] then
+			if operators[token].args <= 1 then
 				local pop1 = table.remove(stack)
-				if operator[token].associativity == "left" then
-					table.insert(stack, ("(%s%s)"):format(pop1, tnice))
-				else
-					table.insert(stack, ("(%s%s)"):format(tnice, pop1))
-				end
+				table.insert(stack, newUnaryNode(token, pop1))
 			else
 				local pop1 = table.remove(stack)
 				local pop2 = table.remove(stack)
-				table.insert(stack, ("(%s %s %s)"):format(pop2, tnice, pop1))
+				table.insert(stack, newOPNode(token, pop2, pop1))
 			end
 		elseif functions[token] then
 			if functions[token].args <= 1 then
 				local pop1 = table.remove(stack)
-				table.insert(stack, ("%s(%s)"):format(tnice, pop1))
+				table.insert(stack, newFunctionNode(token, pop1))
 			else
 				local pop1 = table.remove(stack)
 				local pop2 = table.remove(stack)
-				table.insert(stack, ("%s(%s, %s)"):format(tnice, pop2, pop1))
+				table.insert(stack, newFunctionNode(token, pop2, pop1))
 			end
 		end
 	end
 
-	return table.concat(stack)
+	return table.remove(stack)
+end
+
+function math.infix_to_string(node)
+	if not node then return "" end
+	if node.kind == "number" then
+		return node.value
+	elseif node.kind == "function" then
+		if node.arg1 and node.arg2 then
+			return node.func .. '(' .. math.infix_to_string(node.arg1) .. ', ' .. math.infix_to_string(node.arg2) .. ')'
+		else
+			return node.func .. '(' .. math.infix_to_string(node.arg1) .. ')'
+		end
+	elseif node.kind == "unary" then
+		if node.associativity == "left" then
+			return '(' .. math.infix_to_string(node.node) .. node.operator .. ')'
+		else
+			return '(' .. node.operator .. math.infix_to_string(node.node) .. ')'
+		end
+	end
+	local lhs = math.infix_to_string(node.left)
+	--print("lhs", lhs)
+	if needParensOnLeft(node) then
+		lhs = '(' .. lhs .. ')'
+	end
+	local rhs = math.infix_to_string(node.right)
+	--print("rhs", rhs)
+	if needParensOnRight(node) then
+		rhs = '(' .. rhs .. ')'
+	end
+	return lhs .. ' ' .. node.operator .. ' ' .. rhs
+end
+
 end
 
 function math.solve_postfix(tbl)
 	local stack = {}
 	for k, token in ipairs(tbl) do
-		if operator[token] then
+		if operators[token] then
 			local args = {}
-			for i=1,operator[token].args do
+			for i=1,operators[token].args do
 				table.insert(args, 1, table.remove(stack))
 			end
-			local func = operator[token].method
+			local func = operators[token].method
 			table.insert(stack, func(unpack(args)))
 		elseif functions[token] then
 			local args = {}
@@ -426,12 +502,18 @@ function math.solve_postfix(tbl)
 end
 
 --local expression = "random(1,5)"
---local expression = "-min(0xf.0e0p1,0x12p2)!+(2e-3+-5*(59*1+4)/2)"
+--local expression = "-min(0xf.0e0p1,0x12p2)+(2e-3+-5*(59*1+4)/2)"
+local expression = "(2e-3+-5*(59*1+4)/2)"
 --local expression = "3e1 + 1"
 --local expression = "-sqrt(1 << 4)!"
 --local expression = "120 % 60"
-local expression = "(8+2)*2+4"
+--local expression = "1 + 3 / 2 ^ 4"
 --local expression = "23--4+4^3/2*2"
+--local expression = "min(3,2)/2+4"
+--local expression = "-1 + 2"
+local expression = "1+3-5*2/2"
+local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
+local expression = "4+(-4)!+ 1*1/3"
 
 local stack, err = math.postfix(expression)
 
@@ -446,4 +528,6 @@ local total = math.solve_postfix(stack)
 
 print(expression .. " = " .. total)
 
-print(math.postfix_to_infix(stack))
+local node = math.postfix_to_infix(stack)
+
+print(math.infix_to_string(node))

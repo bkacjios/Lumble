@@ -50,9 +50,13 @@ end
 
 function user:message(text, ...)
 	text = text or ""
+	text = text:format(...)
+	if #text > self.client.config.message_length then
+		text = string.ellipse(text, self.client.config.message_length)
+	end
 	local msg = packet.new("TextMessage")
 	msg:add("session", self.session)
-	msg:set("message", text:format(...))
+	msg:set("message", text)
 	self:send(msg)
 end
 

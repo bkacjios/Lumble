@@ -19,8 +19,8 @@ function user.new(server, socket, session)
 	user:set("name", "unknown")
 	user:set("user_id", 0)
 	user:set("channel_id", 0)
-	user:set("mute", false)
-	user:set("deaf", false)
+	--user:set("mute", false)
+	--user:set("deaf", false)
 	return user
 end
 
@@ -92,16 +92,29 @@ function user:onVersion(packet)
 end
 
 function user:onUserState(packet)
-	self.server:checkUserState(packet)
+	self.server:checkUserState(self, packet)
 end
 
 function user:onPing(packet)
 	self:send(packet)
 end
 
+function user:onPermissionQuery(packet)
+	self.server:checkPermissionQuery(self, packet)
+end
+
+function user:onTextMessage(packet)
+	self.server:checkTextMessage(self, packet)
+end
+
 function user:onUDPTunnel(packet)
 	print(packet)
 	-- Voice data
+end
+
+function user:hasPermission(permission)
+	print(self, "hasPermission", permission)
+	return true
 end
 
 return user

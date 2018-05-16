@@ -37,3 +37,17 @@ end
 function FILE:readShort()
 	return bit.lshift(self:readByte(), 8) + bit.lshift(self:readByte(), 0)
 end
+
+function FILE:readLines(lstart, lend)
+	local count = 1
+	local ret = ""
+
+	for line in self:lines() do
+		if count >= lstart and count <= lend then
+			ret = ret .. line
+		end
+		count = count + 1
+	end
+
+	return ret
+end
