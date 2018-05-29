@@ -334,25 +334,6 @@ function math.postfix(str)
 	return queue
 end
 
-local function next_op(tbl, pos)
-	for i=pos+1, #tbl do
-		if operators[tbl[i]] then
-			return tbl[i]
-		end
-	end
-end
-
-local function shouldParen(op, next_op)
-	if next_op == '-' then
-		return true
-	elseif next_op == '*' or next_op == '/' then
-		if op == '+' or op == '-' then
-			return true
-		end
-	end
-	return false
-end
-
 do
 
 local function newNumberNode(value)

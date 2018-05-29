@@ -1,5 +1,13 @@
+local byte = string.byte
 local char = string.char
 local gsub = string.gsub
+local lower = string.lower
+local upper = string.upper
+local match = string.match
+local gmatch = string.gmatch
+local format = string.format
+
+local max = math.max
 
 function string.GetPathFromFilename(path)
 	return path:match("^(.*[/\\])[^/\\]-$") or ""
@@ -17,14 +25,14 @@ end
 
 
 function string.gisub(s, pat, repl, n)
-	pat = string.gsub(pat, '(%a)', function (v)
-		return '['..string.upper(v)..string.lower(v)..']'
+	pat = gsub(pat, '(%a)', function (v)
+		return '['..upper(v)..lower(v)..']'
 	end)
 
 	if n then
-		pat = string.gsub(s, pat, repl, n)
+		pat = gsub(s, pat, repl, n)
 	else
-		pat = string.gsub(s, pat, repl)
+		pat = gsub(s, pat, repl)
 	end
 
 	return pat
@@ -52,7 +60,7 @@ end
 
 function string.tohex(str)
 	return (str:gsub('.', function (c)
-		return string.format('%02X', string.byte(c))
+		return format('%02X', byte(c))
 	end))
 end
 
@@ -85,7 +93,7 @@ local htmlEntities = {
 
 function string.escapeHTML(s)
     assert("Expected string in argument #1.")
-    return (string.gsub(s, "[}{\">/<'&]", htmlEntities))
+    return (gsub(s, "[}{\">/<'&]", htmlEntities))
 end
 
 function string.stripHTML(str)
@@ -100,12 +108,12 @@ function string.parseArgs(line)
 	end
 	local quote = line:sub(1,1) ~= '"'
 	local ret = {}
-	for chunk in string.gmatch(line, '[^"]+') do
+	for chunk in gmatch(line, '[^"]+') do
 		quote = not quote
 		if quote then
 			table.insert(ret,chunk)
 		else
-			for chunk in string.gmatch(chunk, "%S+") do -- changed %w to %S to allow all characters except space
+			for chunk in gmatch(chunk, "%S+") do -- changed %w to %S to allow all characters except space
 				table.insert(ret, chunk)
 			end
 		end
@@ -118,11 +126,11 @@ function string.Plural(str, num, suffix)
 end
 
 function string.AOrAn(s)
-	return string.match(s, "^h?[AaEeIiOoUu]") and "an" or "a"
+	return match(s, "^h?[AaEeIiOoUu]") and "an" or "a"
 end
 
 function string.ellipse(s, len)
-	len = math.max(len or 3, 3)
+	len = max(len or 3, 3)
 	if #s >= len then
 		local before = s:sub(1, len - 3):rtrim()
 		return before .. "..."

@@ -81,8 +81,8 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 		message = message .. "</ol>"
 
 		if name == "Orange-Tang" then
-			rolled_initiatives = {}
-			did_roll = {}
+			--rolled_initiatives = {}
+			--did_roll = {}
 			user:getChannel():message(message)
 		else
 			user:message(message)
@@ -137,7 +137,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		str = "d20"
 	elseif args[1] == "advantage" or args[1] == "adv" then
 		str = "max(d20, d20)"
-	elseif args[1] == "disadvantage" or args[1] == "disadv" then
+	elseif args[1] == "disadvantage" or args[1] == "disadv" or args[1] == "dadv" then
 		str = "min(d20, d20)"
 	end
 
@@ -150,11 +150,13 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 
 	local rolls = {}
 	local orig_str = str
+	local num_rolls = 0
 
 	str = string.gsub(str, "(%d+)[Dd](%d+)", function(num, dice)
 		local results, total = math.roll(dice, num)
 		local name = ("D%d"):format(dice)
 		rolls[name] = rolls[name] or {}
+		num_rolls = num_rolls + num
 		for k, result in pairs(results) do
 			table.insert(rolls[name], result)
 		end
@@ -165,6 +167,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		local results, total = math.roll(dice, 1)
 		local name = ("D%d"):format(dice)
 		rolls[name] = rolls[name] or {}
+		num_rolls = num_rolls + 1
 		for k, result in pairs(results) do
 			table.insert(rolls[name], result)
 		end
@@ -187,12 +190,6 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local username = user:getName()
 	local name = name_convert[username] or username
 
-	local rolled_dice = {}
-
-	for dice, results in pairs(rolls) do
-		table.insert(rolled_dice, #results > 1 and ("%d%s"):format(#results, dice) or dice)
-	end
-
 	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>", name, orig_str, total)
 
 	if #stack > 2 then
@@ -211,9 +208,55 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	if cmd:sub(2) == "proll" then
 		user:message(message)
 	else
+		if not client:isPlaying() then
+			local sound_num = math.min(num_rolls, 6)
+			local stream = client:createOggStream(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, math.random(1, 2)))
+			stream:setVolume(2)
+			client:playOggStream(stream)
+		end
 		user:getChannel():message(message)
 	end
-end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll")
+end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll"):alias("rtd")
+
+client:addCommand("flip", function(client, user, cmd, args, raw)
+	local number = tonumber(args[1]) or 1
+
+	local results, total = math.roll(2, number)
+
+	local num_heads = 0
+	local num_tails = 0
+
+	for i=1,#results do
+		local heads = results[i] == 1
+		num_heads = num_heads + (heads and 1 or 0)
+		num_tails = num_tails + (heads and 0 or 1)
+		results[i] = heads and "heads" or "tails"
+	end
+
+	local username = user:getName()
+	local name = name_convert[username] or username
+
+	local message
+
+	if #results > 1 then
+		message = ("<b>%s</b> flipped <i>%d coins</i> and got <b><span style=\"color:#aa0000\">%d heads</span></b> and <b><span style=\"color:#aa0000\">%d tails</span></b>"):format(name, #results, num_heads, num_tails)
+	else
+		message = ("<b>%s</b> flipped a coin and got <b><span style=\"color:#aa0000\">%s</span></b>"):format(name, results[1])
+	end
+
+	log.info(message:stripHTML())
+
+	if cmd:sub(2) == "pflip" then
+		user:message(message)
+	else
+		if not client:isPlaying() then
+			local stream = client:createOggStream("audio/dnd/coin_flip.ogg")
+			stream:setVolume(1.35)
+			client:playOggStream(stream)
+		end
+		user:getChannel():message(message)
+	end
+end):setHelp("Flip a coin"):setUsage("[coins = 1]"):alias("pflip")
 
 client:addCommand("rollstats", function(client, user, cmd, args)
 	local stats = {}

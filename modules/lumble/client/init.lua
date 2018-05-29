@@ -105,6 +105,15 @@ function client:isSynced()
 	return self.synced
 end
 
+function client:createOggStream(file)
+	local ogg, err = stream(file)
+	return ogg, err
+end
+
+function client:playOggStream(stream)
+	self.playing = stream
+end
+
 function client:playOgg(file, count)
 	local ogg, err = stream(file)
 	if ogg then
