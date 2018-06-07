@@ -48,6 +48,26 @@ client:addCommand("summon", function(client, user, cmd, args, raw)
 	client.me:move(user:getChannel())
 end):setHelp("Bring me to your channel")
 
+client:addCommand("math", function(client, user, cmd, args, raw)
+	local str = raw:sub(#cmd+2)
+
+	local stack, err = math.postfix(str)
+
+	if not stack then
+		local message = string.format("<p><b><span style=\"color:#aa0000\">error</span></b>: %s", err)
+		log.info(message:stripHTML())
+		user:message(message)
+		return
+	end
+
+	local node = math.postfix_to_infix(stack)
+	local equation = math.infix_to_string(node)
+	local total = math.solve_postfix(stack)
+
+	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
+end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
+
+
 local name_convert = {
 	["Amer"] = "Sancho",
 	["Atsu"] = "Drak",
@@ -60,7 +80,7 @@ local inititive = {
 	["Sancho"] = 5,
 	["Drak"] = 4,
 	["Bhord"] = 0,
-	["Ranger Rick"] = 4,
+	["Ranger Rick"] = 5,
 	["Hrangus"] = 1,
 }
 
@@ -105,73 +125,62 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 	end
 	did_roll[name] = true
 	local bonus = (inititive[name] or 0)
-	local message = string.format("<p><b>%s</b> rolled a <b><span style=\"color:#aa0000\">%d</span></b> (%d + %d) initiative", name, total + bonus, total, bonus)
+	local message = string.format("<p><b>%s</b> rolled a <b><span style=\"color:#3377ff\">%d</span></b> (%d + %d) initiative", name, total + bonus, total, bonus)
 	table.insert(rolled_initiatives, {name = name, roll = total, bonus = bonus})
 	table.sort(rolled_initiatives, function(a, b) return a.roll + a.bonus > b.roll + b.bonus end)
+
+	if not client:isPlaying() then
+		local stream = client:createOggStream(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)))
+		stream:setVolume(1)
+		client:playOggStream(stream)
+	end
+
 	user:getChannel():message(message)
 end):setHelp("Roll for initiative"):setUsage("[clear, list]"):alias("init")
 
-client:addCommand("math", function(client, user, cmd, args, raw)
-	local str = raw:sub(#cmd+2)
+local advantage_shortcuts = {
+	"advantage",
+	"advan",
+	"adv",
+}
 
-	local stack, err = math.postfix(str)
-
-	if not stack then
-		local message = string.format("<p><b><span style=\"color:#aa0000\">error</span></b>: %s", err)
-		log.info(message:stripHTML())
-		user:message(message)
-		return
-	end
-
-	local node = math.postfix_to_infix(stack)
-	local equation = math.infix_to_string(node)
-	local total = math.solve_postfix(stack)
-
-	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
-end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
+local disadvantage_shortcuts = {
+	"disadvantage",
+	"disadvan",
+	"disadv",
+	"dadvan",
+	"disad",
+	"dadv",
+}
 
 client:addCommand("roll", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
 
-	if #str <= 0 then
-		str = "d20"
-	elseif args[1] == "advantage" or args[1] == "adv" then
-		str = "max(d20, d20)"
-	elseif args[1] == "disadvantage" or args[1] == "disadv" or args[1] == "dadv" then
-		str = "min(d20, d20)"
+	for _, adv in pairs(advantage_shortcuts) do
+		str = str:gsub(adv, "max(d20, d20)")
+	end
+	for _, dadv in pairs(disadvantage_shortcuts) do
+		str = str:gsub(dadv, "min(d20, d20)")
 	end
 
-	if not str:match("%d+[Dd]%d+") and not str:match("[Dd]%d+") then
-		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: Invalid roll"
-		log.info(message:stripHTML())
-		user:message(message)
-		return
+	if not str:match("%d-[Dd]%d+") then
+		str = "d20" .. (str ~= "" and (" %s"):format(str) or "")
 	end
 
 	local rolls = {}
 	local orig_str = str
 	local num_rolls = 0
 
-	str = string.gsub(str, "(%d+)[Dd](%d+)", function(num, dice)
+	str = string.gsub(str, "(%d-)[Dd](%d+)", function(num, dice)
+		num = tonumber(num) or 1
+		dice = tonumber(dice)
 		local results, total = math.roll(dice, num)
-		local name = ("D%d"):format(dice)
-		rolls[name] = rolls[name] or {}
+		rolls[dice] = rolls[dice] or {}
 		num_rolls = num_rolls + num
 		for k, result in pairs(results) do
-			table.insert(rolls[name], result)
+			table.insert(rolls[dice], result)
 		end
 		return ("(%s)"):format(table.concat(results, "+"))
-	end)
-
-	str = string.gsub(str, "[Dd](%d+)", function(dice)
-		local results, total = math.roll(dice, 1)
-		local name = ("D%d"):format(dice)
-		rolls[name] = rolls[name] or {}
-		num_rolls = num_rolls + 1
-		for k, result in pairs(results) do
-			table.insert(rolls[name], result)
-		end
-		return ("%s"):format(table.concat(results, "+"))
 	end)
 
 	local stack, err = math.postfix(str)
@@ -190,14 +199,27 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local username = user:getName()
 	local name = name_convert[username] or username
 
-	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#aa0000\">%s</span></b> and got <b><span style=\"color:#aa0000\">%s</span></b>", name, orig_str, total)
+	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#3377ff\">%s</span></b> and got <b><span style=\"color:#3377ff\">%s</span></b>", name, orig_str:gsub("%s+", ""), total)
 
 	if #stack > 2 then
 		message = message .. ("\n<table><tr><td><b>Equation</b></td><td>: %s</td></tr>"):format(equation:gsub("%%", "%%%%"))
 		message = message .. ("\n<tr><td><b>Solution</b></td><td>: %s</td></tr>"):format(total)
 
 		for dice, results in pairs(rolls) do
-			message = message .. ("\n<tr><td><b>%s Rolls</b></td><td>: %s</td></tr>"):format(dice:upper(), table.concat(results, ", "))
+			local roll_list = ""
+			for k, roll in pairs(results) do
+				if dice == roll then
+					roll_list = roll_list .. "<b><span style=\"color:#00aa00\">" .. roll .. "</span></b>"
+				elseif roll == 1 then
+					roll_list = roll_list .. "<b><span style=\"color:#aa0000\">" .. roll .. "</span></b>"
+				else
+					roll_list = roll_list .. roll
+				end
+				if k < #results then
+					roll_list = roll_list .. ", "
+				end
+			end
+			message = message .. ("\n<tr><td><b>D%d Rolls</b></td><td>: %s</td></tr>"):format(dice, roll_list)
 		end
 
 		message = message .. "</table>"
@@ -210,8 +232,9 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	else
 		if not client:isPlaying() then
 			local sound_num = math.min(num_rolls, 6)
-			local stream = client:createOggStream(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, math.random(1, 2)))
-			stream:setVolume(2)
+			local rand = math.random(1, 2)
+			local stream = client:createOggStream(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, rand))
+			stream:setVolume(1)
 			client:playOggStream(stream)
 		end
 		user:getChannel():message(message)
@@ -239,9 +262,9 @@ client:addCommand("flip", function(client, user, cmd, args, raw)
 	local message
 
 	if #results > 1 then
-		message = ("<b>%s</b> flipped <i>%d coins</i> and got <b><span style=\"color:#aa0000\">%d heads</span></b> and <b><span style=\"color:#aa0000\">%d tails</span></b>"):format(name, #results, num_heads, num_tails)
+		message = ("<b>%s</b> flipped <i>%d coins</i> and got <b><span style=\"color:#3377ff\">%d heads</span></b> and <b><span style=\"color:#3377ff\">%d tails</span></b>"):format(name, #results, num_heads, num_tails)
 	else
-		message = ("<b>%s</b> flipped a coin and got <b><span style=\"color:#aa0000\">%s</span></b>"):format(name, results[1])
+		message = ("<b>%s</b> flipped a coin and got <b><span style=\"color:#3377ff\">%s</span></b>"):format(name, results[1])
 	end
 
 	log.info(message:stripHTML())
@@ -250,13 +273,13 @@ client:addCommand("flip", function(client, user, cmd, args, raw)
 		user:message(message)
 	else
 		if not client:isPlaying() then
-			local stream = client:createOggStream("audio/dnd/coin_flip.ogg")
-			stream:setVolume(1.35)
+			local stream = client:createOggStream(("audio/dnd/coin_flip-%d.ogg"):format(math.random(1,2)))
+			stream:setVolume(1)
 			client:playOggStream(stream)
 		end
 		user:getChannel():message(message)
 	end
-end):setHelp("Flip a coin"):setUsage("[coins = 1]"):alias("pflip")
+end):setHelp("Flip a coin"):setUsage("[#coins = 1]"):alias("pflip")
 
 client:addCommand("rollstats", function(client, user, cmd, args)
 	local stats = {}
@@ -274,7 +297,13 @@ client:addCommand("rollstats", function(client, user, cmd, args)
 		table.insert(stats, stat)
 	end
 
-	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#aa0000\">%s</span></b>", user:getName(), table.concat(stats, ", "))
+	if not client:isPlaying() then
+		local stream = client:createOggStream(("audio/dnd/dice_roll_4-%d.ogg"):format(math.random(1, 2)))
+		stream:setVolume(1)
+		client:playOggStream(stream)
+	end
+
+	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#3377ff\">%s</span></b>", user:getName(), table.concat(stats, ", "))
 end):setHelp("Rolls 4D6 and takes the highest 3 values, 6 times")
 
 client:addCommand("help", function(client, user, cmd, args, raw)

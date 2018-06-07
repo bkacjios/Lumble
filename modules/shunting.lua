@@ -234,6 +234,7 @@ function math.postfix(str)
 	local stack = {}
 
 	local prev_token = nil
+	local prev_important_token = nil
 
 	local buf = Buffer(str:gsub("%s", ''))
 
@@ -243,6 +244,9 @@ function math.postfix(str)
 		if not token then break end
 
 		if tonumber(token) then
+			if tonumber(prev_important_token) then
+				return false, "number given without an operator"
+			end
 			table.insert(queue, tonumber(token))
 		elseif constants[token] then
 			table.insert(queue, constants[token])
@@ -318,6 +322,9 @@ function math.postfix(str)
 			table.insert(stack, token)
 		else
 			return false, ("unexpected token '%s'"):format(token)
+		end
+		if token ~= '(' and token ~= ')' then
+			prev_important_token = token
 		end
 		prev_token = token
 	end
@@ -495,6 +502,7 @@ local expression = "(2e-3+-5*(59*1+4)/2)"
 local expression = "1+3-5*2/2"
 local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
 local expression = "4+(-4)!+ 1*1/3"
+local expression = "18(+4)"
 
 local stack, err = math.postfix(expression)
 
