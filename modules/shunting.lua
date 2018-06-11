@@ -253,9 +253,13 @@ function math.postfix(str)
 			table.insert(queue, constants[token])
 		elseif functions[token] then
 			-- Make functions with only 1 argument have optional parentheses
-			if not functions[token].multi and buf:peek(1) ~= "(" then
+			local peek = buf:peek(1)
+			if functions[token].multi and peek ~= "(" then
 				return false, ("'(' expected after '%s'"):format(token)
 			else
+				if not tonumber(peek) then
+					return false, "function has no arguments"
+				end
 				table.insert(stack, token)
 				args[#stack] = 1
 			end
@@ -270,7 +274,7 @@ function math.postfix(str)
 					if #stack == 0 then return false, "expected '(' before ','" end
 				end
 			end
-			-- Only allow commas on the same stack as a function
+			-- Only allow commas on the same scope as a function
 			if not functions[stack[#stack-1]] then
 				return false, ("misuse of ',' outside of funciton scope near '%s'"):format(prev_token)
 			end
@@ -497,12 +501,8 @@ function math.solve_postfix(tbl)
 			local func = functions[token:sub(1, spos-1)].method
 			table.insert(stack, func(unpack(args)))
 		elseif functions[token] then
-			local args = {}
-			for i=1,functions[token].args do
-				table.insert(args, 1, table.remove(stack))
-			end
 			local func = functions[token].method
-			table.insert(stack, func(unpack(args)))
+			table.insert(stack, func(table.remove(stack)))
 		else
 			table.insert(stack, token)
 		end
@@ -526,6 +526,7 @@ local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
 local expression = "4+(-4)!+ 1*1/3"
 local expression = "18(+4)"
 local expression = "min(3, max(-2,-1,0,1,2))"
+local expression = "sin 1"
 
 local stack, err = math.postfix(expression)
 
