@@ -257,7 +257,7 @@ function math.postfix(str)
 			if functions[token].multi and peek ~= "(" then
 				return false, ("'(' expected after '%s'"):format(token)
 			else
-				if not tonumber(peek) then
+				if peek ~= "(" and not tonumber(peek) then
 					return false, "function has no arguments"
 				end
 				table.insert(stack, token)
@@ -526,7 +526,7 @@ local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
 local expression = "4+(-4)!+ 1*1/3"
 local expression = "18(+4)"
 local expression = "min(3, max(-2,-1,0,1,2))"
-local expression = "sin 1"
+--local expression = "sin 1"
 
 local stack, err = math.postfix(expression)
 
