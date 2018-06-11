@@ -41,7 +41,7 @@ client:hook("OnServerSync", function(client, me)
 	--client:playOgg("lookingkindofdumb.ogg")
 end)
 
-lua.install(client)
+--lua.install(client)
 afk.install(client)
 
 client:addCommand("summon", function(client, user, cmd, args, raw)
@@ -64,7 +64,7 @@ client:addCommand("math", function(client, user, cmd, args, raw)
 	local equation = math.infix_to_string(node)
 	local total = math.solve_postfix(stack)
 
-	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
+	user:message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
 
 
@@ -156,11 +156,11 @@ local disadvantage_shortcuts = {
 client:addCommand("roll", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
 
-	for _, adv in pairs(advantage_shortcuts) do
-		str = str:gsub(adv, "max(d20, d20)")
-	end
 	for _, dadv in pairs(disadvantage_shortcuts) do
 		str = str:gsub(dadv, "min(d20, d20)")
+	end
+	for _, adv in pairs(advantage_shortcuts) do
+		str = str:gsub(adv, "max(d20, d20)")
 	end
 
 	if not str:match("%d-[Dd]%d+") then
@@ -462,3 +462,123 @@ client:addCommand("afk", function(client, user, cmd, args, raw)
 
 	user:move(afkchannel)
 end):setHelp("Make the bot move you to the AFK channel")
+
+local json = require("dkjson")
+local https = require("ssl.https")
+
+local function getDuration(stamp)
+	local hours = string.match(stamp, "(%d+)H") or 0
+	local minutes = string.match(stamp, "(%d+)M") or 0
+	local seconds = string.match(stamp, "(%d+)S") or 0
+
+	if hours > 0 then
+		return string.format("%02d:%02d:%02d", hours, minutes, seconds)
+	else
+		return string.format("%02d:%02d", minutes, seconds)
+	end
+end
+
+function twitchHttps(url, ...)
+	local t = {}
+	local r, c, h = https.request({
+		url = url:format(...),
+		sink = ltn12.sink.table(t),
+		headers = {
+			["Client-ID"] = config.twitch.client,
+		},
+	})
+
+	r = table.concat(t, "")
+	return r, c, h
+end
+
+
+local function formatTwitch(id)
+	local req = twitchHttps(("https://api.twitch.tv/helix/clips?id=%s"):format(id))
+	if not req then return end
+	if( #req == 0 ) then return end
+
+	local js = json.decode(req)
+
+	local items = js.data[1]
+
+	if not items then return "Private or invalid Twitch.tv Clip." end
+
+	return ([[
+<center><table>
+	<tr>
+		<td align="center" valign="middle">
+			<h3>%s</h3>
+		</td>
+	</tr>
+	<tr>
+		<td align="center">
+			<a href="%s"><img src="%s" width="250" /></a>
+		</td>
+	</tr>
+</table></center>
+]]):format(items.title, items.url, items.thumbnail_url):gsub("%%", "%%%%")
+end
+
+local function formatYoutube(id)
+	local req = https.request(("https://www.googleapis.com/youtube/v3/videos?key=%s&part=statistics,snippet,contentDetails&id=%s"):format(config.youtube.api, id))
+	if not req then return end
+	if( #req == 0 ) then return end
+
+	local js = json.decode(req)
+
+	local items = js.items[1]
+
+	if not items then return "Private or invalid YouTube video." end
+
+	return ([[
+<center><table>
+	<tr>
+		<td align="center" valign="middle">
+			<h3>%s (%s)</h3>
+		</td>
+	</tr>
+	<tr>
+		<td align="center">
+			<a href="http://youtu.be/%s"><img src="%s" width="250" /></a>
+		</td>
+	</tr>
+</table></center>
+]]):format(items.snippet.title, getDuration(items.contentDetails.duration), id, items.snippet.thumbnails.medium.url)
+end
+
+local function formatOther(url)
+	return ([[<p><center><a href="%s"><img src="%s" width="250" /></a></center>]]):format(url, url, url)
+end
+
+local valid_others = {
+	["jpg"] = true,
+	["jpeg"] = true,
+	["gif"] = true,
+	["png"] = true,
+	["tga"] = true,
+	["tif"] = true,
+	["bmp"] = true,
+}
+
+client:hook("OnTextMessage", "Thumbnails", function(client, event)
+	local message = event.message:unescapeHTML():stripHTML()
+	local user = event.actor
+
+	local youtube = message:match("youtube%.com/watch.-v=([%w_-]+)") or message:match("youtu%.be/([%w_-]+)" )
+	local twitch = message:match("clips.twitch.tv/(%w+)")
+	local other = message:match("(https?://[%w%p]+)")
+
+	if youtube then
+		user:getChannel():message(formatYoutube(youtube))
+	end
+	if twitch then
+		user:getChannel():message(formatTwitch(twitch))
+	end
+	if other then
+		local ext = string.ExtensionFromFile(other):lower()
+		if valid_others[ext] then
+			user:getChannel():message(formatOther(other))
+		end
+	end
+end)

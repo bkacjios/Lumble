@@ -154,34 +154,34 @@ local translate_tokens = {
 }
 
 local functions = {
-	["abs"] = {args = 1, method = math.abs},
-	["acos"] = {args = 1, method = math.acos},
-	["asin"] = {args = 1, method = math.asin},
-	["atan"] = {args = 1, method = math.atan},
-	["atan2"] = {args = 2, method = math.atan2},
-	["ceil"] = {args = 2, method = math.ceil},
-	["cos"] = {args = 1, method = math.cos},
-	["cosh"] = {args = 1, method = math.cosh},
-	["deg"] = {args = 1, method = math.deg},
-	["exp"] = {args = 1, method = math.exp},
-	["floor"] = {args = 2, method = math.floor},
-	["fmod"] = {args = 2, method = math.fmod},
-	--["frexp"] = {args = 2, method = math.frexp},
-	["ldexp"] = {args = 2, method = math.ldexp},
-	["ln"] = {args = 1, method = math.log},
-	["log"] = {args = 1, method = math.log10},
-	["max"] = {args = 2, method = math.max},
-	["min"] = {args = 2, method = math.min},
-	--["modf"] = {args = 2, method = math.modf},
-	["pow"] = {args = 2, method = math.pow},
-	["rad"] = {args = 1, method = math.rad},
+	["abs"] = {method = math.abs},
+	["acos"] = {method = math.acos},
+	["asin"] = {method = math.asin},
+	["atan"] = {method = math.atan},
+	["atan2"] = {multi = true, method = math.atan2},
+	["ceil"] = {multi = true, method = math.ceil},
+	["cos"] = {method = math.cos},
+	["cosh"] = {method = math.cosh},
+	["deg"] = {method = math.deg},
+	["exp"] = {method = math.exp},
+	["floor"] = {multi = true, method = math.floor},
+	["fmod"] = {multi = true, method = math.fmod},
+	--["frexp"] = {multi = true, method = math.frexp},
+	["ldexp"] = {multi = true, method = math.ldexp},
+	["ln"] = {method = math.log},
+	["log"] = {method = math.log10},
+	["max"] = {multi = true, method = math.max},
+	["min"] = {multi = true, method = math.min},
+	--["modf"] = {multi = true, method = math.modf},
+	["pow"] = {multi = true, method = math.pow},
+	["rad"] = {method = math.rad},
 	["rand"] = {args = 0, method = math.random},
-	["random"] = {args = 2, method = math.random},
-	["sin"] = {args = 1, method = math.sin},
-	["sinh"] = {args = 1, method = math.sinh},
-	["sqrt"] = {args = 1, method = math.sqrt},
-	["tan"] = {args = 1, method = math.tan},
-	["tanh"] = {args = 1, method = math.tanh},
+	["random"] = {multi = true, method = math.random},
+	["sin"] = {method = math.sin},
+	["sinh"] = {method = math.sinh},
+	["sqrt"] = {method = math.sqrt},
+	["tan"] = {method = math.tan},
+	["tanh"] = {method = math.tanh},
 }
 
 local constants = {
@@ -235,6 +235,7 @@ function math.postfix(str)
 
 	local prev_token = nil
 	local prev_important_token = nil
+	local args = {}
 
 	local buf = Buffer(str:gsub("%s", ''))
 
@@ -252,10 +253,11 @@ function math.postfix(str)
 			table.insert(queue, constants[token])
 		elseif functions[token] then
 			-- Make functions with only 1 argument have optional parentheses
-			if functions[token].args > 1 and buf:peek(1) ~= "(" then
+			if not functions[token].multi and buf:peek(1) ~= "(" then
 				return false, ("'(' expected after '%s'"):format(token)
 			else
 				table.insert(stack, token)
+				args[#stack] = 1
 			end
 		elseif token == ',' then
 			while true do
@@ -265,11 +267,14 @@ function math.postfix(str)
 					break
 				else
 					table.insert(queue, pop)
-					if #stack == 0 then
-						return false, "expected '('' before ','"
-					end
+					if #stack == 0 then return false, "expected '(' before ','" end
 				end
 			end
+			-- Only allow commas on the same stack as a function
+			if not functions[stack[#stack-1]] then
+				return false, ("misuse of ',' outside of funciton scope near '%s'"):format(prev_token)
+			end
+			args[#stack-1] = args[#stack-1] + 1
 		elseif token == "(" then
 			table.insert(stack, token)
 		elseif token == ")" then
@@ -283,8 +288,9 @@ function math.postfix(str)
 				end
 			end
 			if #stack > 0 and functions[stack[#stack]] then
+				local n = args[#stack]
 				local pop = table.remove(stack)
-				table.insert(queue, pop)
+				table.insert(queue, pop .. ":" .. n)
 			end
 		elseif operators[token] then
 			local valid = not tonumber(prev_token) and prev_token ~= ')' and prev_token ~= '!'
@@ -373,12 +379,11 @@ local function newUnaryNode(token, node)
 	}
 end
 
-local function newFunctionNode(func, arg1, arg2)
+local function newFunctionNode(func, args)
 	return {
 		kind = "function",
 		func = func,
-		arg1 = arg1,
-		arg2 = arg2,
+		args = args,
 	}
 end
 
@@ -417,15 +422,17 @@ function math.postfix_to_infix(tbl)
 				local pop2 = table.remove(stack)
 				table.insert(stack, newOPNode(token, pop2, pop1))
 			end
-		elseif functions[token] then
-			if functions[token].args <= 1 then
-				local pop1 = table.remove(stack)
-				table.insert(stack, newFunctionNode(token, pop1))
-			else
-				local pop1 = table.remove(stack)
-				local pop2 = table.remove(stack)
-				table.insert(stack, newFunctionNode(token, pop2, pop1))
+		elseif string.find(token, ":") then
+			local spos, epos = string.find(token, ":")
+			local args = {}
+
+			for i=1,token:sub(epos+1) do
+				table.insert(args, 1, table.remove(stack))
 			end
+
+			table.insert(stack, newFunctionNode(token:sub(1, spos-1), args))
+		elseif functions[token] then
+			table.insert(stack, newFunctionNode(token, {table.remove(stack)}))
 		end
 	end
 
@@ -437,11 +444,16 @@ function math.infix_to_string(node)
 	if node.kind == "number" then
 		return node.value
 	elseif node.kind == "function" then
-		if node.arg1 and node.arg2 then
-			return node.func .. '(' .. math.infix_to_string(node.arg1) .. ', ' .. math.infix_to_string(node.arg2) .. ')'
-		else
-			return node.func .. '(' .. math.infix_to_string(node.arg1) .. ')'
+		local str = node.func .. '('
+
+		for k,arg in pairs(node.args) do
+			str = str .. math.infix_to_string(arg)
+			if k < #node.args then
+				str = str .. ', '
+			end
 		end
+
+		return str .. ')'
 	elseif node.kind == "unary" then
 		if node.associativity == "left" then
 			return '(' .. math.infix_to_string(node.node) .. node.operator .. ')'
@@ -474,6 +486,16 @@ function math.solve_postfix(tbl)
 			end
 			local func = operators[token].method
 			table.insert(stack, func(unpack(args)))
+		elseif string.find(token, ":") then
+			local spos, epos = string.find(token, ":")
+			local args = {}
+
+			for i=1,token:sub(epos+1) do
+				table.insert(args, 1, table.remove(stack))
+			end
+
+			local func = functions[token:sub(1, spos-1)].method
+			table.insert(stack, func(unpack(args)))
 		elseif functions[token] then
 			local args = {}
 			for i=1,functions[token].args do
@@ -503,6 +525,7 @@ local expression = "1+3-5*2/2"
 local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
 local expression = "4+(-4)!+ 1*1/3"
 local expression = "18(+4)"
+local expression = "min(3, max(-2,-1,0,1,2))"
 
 local stack, err = math.postfix(expression)
 

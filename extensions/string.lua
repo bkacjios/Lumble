@@ -23,7 +23,6 @@ function string.StripExtension( path )
 	return path
 end
 
-
 function string.gisub(s, pat, repl, n)
 	pat = gsub(pat, '(%a)', function (v)
 		return '['..upper(v)..lower(v)..']'
@@ -42,7 +41,6 @@ function string.trim(self, char)
 	char = char or "%s"
 	return self:gsub("^"..char.."*(.-)"..char.."*$", "%1" )
 end
-
 
 function string.ltrim(s)
 	return s:gsub("^%s*", "")
