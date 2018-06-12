@@ -135,7 +135,7 @@ local operators = {
 		args = 1,
 	},
 	["!"] = {
-		precedence = 1,
+		precedence = 2,
 		associativity = "left",
 		method = function(a) return math.factorial(a) end,
 		args = 1,
@@ -254,15 +254,17 @@ function math.postfix(str)
 		elseif functions[token] then
 			-- Make functions with only 1 argument have optional parentheses
 			local peek = buf:peek(1)
-			if functions[token].multi and peek ~= "(" then
-				return false, ("'(' expected after '%s'"):format(token)
-			else
-				if peek ~= "(" and not tonumber(peek) then
+
+			if peek ~= "(" then
+				if functions[token].multi then
+					return false, ("'(' expected after '%s'"):format(token)
+				elseif not tonumber(peek) then
 					return false, "function has no arguments"
 				end
-				table.insert(stack, token)
-				args[#stack] = 1
 			end
+
+			table.insert(stack, token)
+			args[#stack] = 1
 		elseif token == ',' then
 			while true do
 				local pop = table.remove(stack)
@@ -386,6 +388,7 @@ end
 local function newFunctionNode(func, args)
 	return {
 		kind = "function",
+		precedence = 1,
 		func = func,
 		args = args,
 	}
@@ -402,7 +405,7 @@ local function needParensOnLeft(node)
 end
     
 local function needParensOnRight(node)
-	if node.right.kind == "number" or node.right.kind == "unary" then
+	if node.right.kind == "number" or node.right.kind == "unary" or node.right.kind == "function" then
 		return false
 	end
 	if node.operator == "+" or node.operator == "*" then
@@ -525,8 +528,7 @@ local expression = "1+3-5*2/2"
 local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
 local expression = "4+(-4)!+ 1*1/3"
 local expression = "18(+4)"
-local expression = "min(3, max(-2,-1,0,1,2))"
---local expression = "sin 1"
+local expression = "min(3, max(-2,-1,0,1,2)) + sin 1"
 
 local stack, err = math.postfix(expression)
 
