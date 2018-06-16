@@ -388,6 +388,13 @@ function BUFFER:readNullString()
 	end
 end
 
+function BUFFER:peekPattern(pattern)
+	local _, pos = self:toString(self.position + 1):find(pattern)
+	if pos then
+		return self:peek(pos)
+	end
+end
+
 function BUFFER:readPattern(pattern)
 	local _, pos = self:toString(self.position + 1):find(pattern)
 	if pos then

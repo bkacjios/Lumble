@@ -64,7 +64,7 @@ client:addCommand("math", function(client, user, cmd, args, raw)
 	local equation = math.infix_to_string(node)
 	local total = math.solve_postfix(stack)
 
-	user:message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
+	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
 
 

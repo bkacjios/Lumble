@@ -209,23 +209,30 @@ local function readNumber(buf)
 	return tonumber(num)
 end
 
+local function peekToken(buf, size)
+	-- Skip over any whitespace..
+	buf:readPattern("^%s+")
+	-- Peek at the next token available
+	return buf:peek(size)
+end
+
 local function readToken(buf)
-	local peek = buf:peek(1)
-	-- Check if the token is a number
+	local peek = peekToken(buf, 1) --buf:peek(1)
+
 	if tonumber(peek) then
 		return readNumber(buf)
 	-- Check 3 character operators first
-	elseif operators[buf:peek(3)] then
+	elseif operators[peekToken(buf, 3)] then
 		return buf:readLen(3)
 	-- Check 2 character operators second
-	elseif operators[buf:peek(2)] then
+	elseif operators[peekToken(buf, 2)] then
 		return buf:readLen(2)
 	-- Check 1 character operators last
 	elseif operators[peek] or peek == '(' or peek == ')' or peek == ',' then
 		return buf:readChar()
 	else
-		-- Fall back to a function name
-		return buf:readPattern("%a+")
+		-- Fall back to a function or constant name
+		return buf:readPattern("^%a+")
 	end
 end
  
@@ -237,7 +244,7 @@ function math.postfix(str)
 	local prev_important_token = nil
 	local args = {}
 
-	local buf = Buffer(str:gsub("%s", ''))
+	local buf = Buffer(str)
 
 	while buf:next() do
 		local token = readToken(buf)
@@ -253,16 +260,16 @@ function math.postfix(str)
 			table.insert(queue, constants[token])
 		elseif functions[token] then
 			-- Make functions with only 1 argument have optional parentheses
-			local peek = buf:peek(1)
+			local peek = peekToken(buf, 1) --buf:peek(1)
 
 			if peek ~= "(" then
 				if functions[token].multi then
-					return false, ("'(' expected after '%s'"):format(token)
-				elseif not tonumber(peek) then
-					return false, "function has no arguments"
+					return false, ("'(' expected after function '%s'"):format(token)
+				--elseif not tonumber(peek) then
+				elseif not peek or peek == "" then
+					return false, ("function '%s' has no arguments"):format(token)
 				end
 			end
-
 			table.insert(stack, token)
 			args[#stack] = 1
 		elseif token == ',' then
@@ -279,6 +286,8 @@ function math.postfix(str)
 			-- Only allow commas on the same scope as a function
 			if not functions[stack[#stack-1]] then
 				return false, ("misuse of ',' outside of funciton scope near '%s'"):format(prev_token)
+			elseif not functions[stack[#stack-1]].multi then
+				return false, ("unexpected ',' in function '%s'"):format(stack[#stack-1])
 			end
 			args[#stack-1] = args[#stack-1] + 1
 		elseif token == "(" then
@@ -296,18 +305,21 @@ function math.postfix(str)
 			if #stack > 0 and functions[stack[#stack]] then
 				local n = args[#stack]
 				local pop = table.remove(stack)
+				if n <= 0 or prev_token == '(' then
+					return false, ("function '%s' has no arguments"):format(pop)
+				end
 				table.insert(queue, pop .. ":" .. n)
 			end
 		elseif operators[token] then
-			local valid = not tonumber(prev_token) and prev_token ~= ')' and prev_token ~= '!'
+			local valid = not tonumber(prev_token) and not constants[prev_token] and prev_token ~= ')' and prev_token ~= '!'
 
-			if token == '~' and not tonumber(buf:peek(1)) then
-				return false, "operator '~' needs a number after it"
+			if token == '~' and not tonumber(peekToken(buf, 1)) and not constants[buf:peekPattern("^%a+")] then
+				return false, "operator '~' needs a number or constnat after it"
 			elseif token == '!' and valid then
 				if prev_token then
-					return false, ("unexpected token '%s' after '%s', expected number"):format(token, prev_token)
+					return false, ("unexpected token '%s' after '%s', expected number or constant"):format(token, prev_token)
 				else
-					return false, ("unexpected token '%s', expected number"):format(token)
+					return false, ("unexpected token '%s', expected number or constant"):format(token)
 				end
 			elseif not prev_token or valid then
 				if token == '+' then
@@ -395,7 +407,7 @@ local function newFunctionNode(func, args)
 end
 
 local function needParensOnLeft(node)
-	if node.left.kind ~= "operator" and node.left.kind ~= "unary" then
+	if node.left.kind ~= "operator" and node.left.kind ~= "unary" or node.left.kind == "function" then
 		return false
 	end
 	if node.operator == "*" or node.operator == "/" or node.operator == "^" then
@@ -469,12 +481,10 @@ function math.infix_to_string(node)
 		end
 	end
 	local lhs = math.infix_to_string(node.left)
-	--print("lhs", lhs)
 	if needParensOnLeft(node) then
 		lhs = '(' .. lhs .. ')'
 	end
 	local rhs = math.infix_to_string(node.right)
-	--print("rhs", rhs)
 	if needParensOnRight(node) then
 		rhs = '(' .. rhs .. ')'
 	end
@@ -529,6 +539,7 @@ local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
 local expression = "4+(-4)!+ 1*1/3"
 local expression = "18(+4)"
 local expression = "min(3, max(-2,-1,0,1,2)) + sin 1"
+local expression = "sin pi"
 
 local stack, err = math.postfix(expression)
 
