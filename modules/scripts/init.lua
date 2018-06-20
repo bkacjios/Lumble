@@ -141,6 +141,13 @@ local function drawRandomCard(user)
 	return { suit_id = suit, suit = card_suites[suit], value = card_values[value], name = card_names[value], id = number, bold = true }
 end
 
+local function hasBlackjack(user, index)
+	local username = user:getName()
+	local player = blackjack_playing[username]
+	local hand = player[index]
+	return (hand[1].value[2] == 11 and hand[2].value[1] == 10) or (hand[1].value[2] == 10 and hand[2].value[1] == 11)
+end
+
 local function getHandValues(user, index)
 	local username = user:getName()
 	local values = {0, 0}
@@ -205,19 +212,13 @@ local function getAllPlayersHands(user, stand)
 end
 
 local function shouldHouseHit(user)
-	local username = user:getName()
-	local player = blackjack_playing[username]
-	local house = player["house"]
-
 	local house_values = getHandValues(user, "house")
-
 	return house_values[1] < 17 or house_values[2] < 17
 end
 
 local function doHouseHit(user)
 	local username = user:getName()
-	local player = blackjack_playing[username]
-	local house = player["house"]
+	local house = blackjack_playing[username]["house"]
 	table.insert(house, drawRandomCard(user))
 end
 
@@ -234,8 +235,7 @@ client:addCommand("hit", function(client, user, cmd, args, raw)
 	local player = blackjack_playing[username]
 
 	if not player then
-		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You aren't playing a game of !blackjack"
-		log.info(message:stripHTML())
+		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You aren't playing a game of <b>!blackjack</b>"
 		user:message(message)
 		return
 	end
@@ -265,19 +265,15 @@ client:addCommand("hit", function(client, user, cmd, args, raw)
 	end
 
 	user:getChannel():message(message)
-end)
+end):setHelp("Hit in a game of blackjack")
 
---[[21 / 41
-21]]
-
-client:addCommand("stay", function(client, user, cmd, args, raw)
+client:addCommand("stand", function(client, user, cmd, args, raw)
 	local username = user:getName()
 	local name = name_convert[username] or username
 
 	local player = blackjack_playing[username]
 	if not player then
-		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You aren't playing a game of !blackjack"
-		log.info(message:stripHTML())
+		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You aren't playing a game of <b>!blackjack</b>"
 		user:message(message)
 		return
 	end
@@ -300,14 +296,14 @@ client:addCommand("stay", function(client, user, cmd, args, raw)
 
 	blackjack_playing[username] = nil
 	user:getChannel():message(message)
-end):alias("stand")
+end):alias("stay"):setHelp("Stand in a game of blackjack")
 
 client:addCommand("blackjack", function(client, user, cmd, args, raw)
 	local username = user:getName()
 	local name = name_convert[username] or username
 
 	if blackjack_playing[username] then
-		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You're already playing a game of !blackjack,  please !hit or !stay"
+		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You're already playing a game of <i>!blackjack</i>,  please <b>!hit</b> or <b>!stay</b>"
 		log.info(message:stripHTML())
 		user:message(message)
 		return
@@ -324,8 +320,23 @@ client:addCommand("blackjack", function(client, user, cmd, args, raw)
 	table.insert(hand, drawRandomCard(user))
 	table.insert(house, drawRandomCard(user))
 
-	user:getChannel():message(getAllPlayersHands(user))
-end)
+	local message
+
+	if hasBlackjack(user, "hand") and hasBlackjack(user, "house") then
+		message = getAllPlayersHands(user, true) .. "<p><b>House &amp; Player Blackjack: <span style=\"color:#3377ff\">DRAW</span></b>"
+		blackjack_playing[username] = nil
+	elseif hasBlackjack(user, "hand") then
+		message = getAllPlayersHands(user, true) .. "<p><b>Player Blackjack: <span style=\"color:#00aa00\">WIN</span></b>"
+		blackjack_playing[username] = nil
+	elseif hasBlackjack(user, "house") then
+		message = getAllPlayersHands(user, true) .. "<p><b>House Blackjack: <span style=\"color:#aa0000\">LOSS</span></b>"
+		blackjack_playing[username] = nil
+	else
+		message = getAllPlayersHands(user)
+	end
+
+	user:getChannel():message(message)
+end):setHelp("Start a game of blackjack")
 
 local inititive = {
 	["Sancho"] = 5,

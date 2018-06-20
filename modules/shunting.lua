@@ -549,7 +549,7 @@ local expression = "sqrt(-1 +4*2/1)"
 local expression = "2e-3+-5*(59*1+4)/2"
 local expression = "2-(3+-5)*59*1+4/2"
 local expression = "min(-3, max(-2,-1,0,1,2)) + sin 1"
-local expression = "1 + 1 - 1 - 1 * 2 - 3 ^ 4 / 5 / 2 * 2 + 6 - 7 >> 4"
+local expression = "1 + 1 - 1 - 1 * 2 - 3 ^ 4 / 5 / 2 * 2 + 6 - 7"
 
 local stack, err = math.postfix(expression)
 
