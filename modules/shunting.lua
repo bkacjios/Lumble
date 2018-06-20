@@ -252,11 +252,14 @@ function math.postfix(str)
 		if not token then break end
 
 		if tonumber(token) then
-			if tonumber(prev_important_token) then
+			if tonumber(prev_important_token) or constants[prev_important_token] then
 				return false, "number given without an operator"
 			end
 			table.insert(queue, tonumber(token))
 		elseif constants[token] then
+			if tonumber(prev_important_token) or constants[prev_important_token] then
+				return false, "constant given without an operator"
+			end
 			table.insert(queue, constants[token])
 		elseif functions[token] then
 			-- Make functions with only 1 argument have optional parentheses
@@ -407,21 +410,21 @@ local function newFunctionNode(func, args)
 end
 
 local function needParensOnLeft(node)
-	if node.left.kind ~= "operator" and node.left.kind ~= "unary" or node.left.kind == "function" then
+	if node.left.kind == "number" or node.left.kind == "unary" or node.left.kind == "function" then
 		return false
 	end
 	if node.operator == "*" or node.operator == "/" or node.operator == "^" then
-		return node.operator ~= node.left.operator
+		return node.left.precedence <= node.precedence
 	end
 	return node.left.precedence < node.precedence
 end
-    
+
 local function needParensOnRight(node)
 	if node.right.kind == "number" or node.right.kind == "unary" or node.right.kind == "function" then
 		return false
 	end
 	if node.operator == "+" or node.operator == "*" then
-		return node.right.precedence < node.precedence
+		return node.right.precedence ~= node.precedence
 	end
 	return node.right.precedence <= node.precedence
 end
@@ -458,7 +461,7 @@ function math.postfix_to_infix(tbl)
 	return table.remove(stack)
 end
 
-function math.infix_to_string(node)
+function math.infix_to_string(node, infunc)
 	if not node then return "" end
 	if node.kind == "number" then
 		return node.value
@@ -466,7 +469,7 @@ function math.infix_to_string(node)
 		local str = node.func .. '('
 
 		for k,arg in pairs(node.args) do
-			str = str .. math.infix_to_string(arg)
+			str = str .. math.infix_to_string(arg, true)
 			if k < #node.args then
 				str = str .. ', '
 			end
@@ -474,11 +477,16 @@ function math.infix_to_string(node)
 
 		return str .. ')'
 	elseif node.kind == "unary" then
+		local val
 		if node.associativity == "left" then
-			return '(' .. math.infix_to_string(node.node) .. node.operator .. ')'
+			val = math.infix_to_string(node.node) .. node.operator
 		else
-			return '(' .. node.operator .. math.infix_to_string(node.node) .. ')'
+			val = node.operator .. math.infix_to_string(node.node)
 		end
+		if infunc then
+			return val
+		end
+		return '(' .. val .. ')'
 	end
 	local lhs = math.infix_to_string(node.left)
 	if needParensOnLeft(node) then
@@ -526,7 +534,6 @@ end
 
 --local expression = "random(1,5)"
 --local expression = "-min(0xf.0e0p1,0x12p2)+(2e-3+-5*(59*1+4)/2)"
-local expression = "(2e-3+-5*(59*1+4)/2)"
 --local expression = "3e1 + 1"
 --local expression = "-sqrt(1 << 4)!"
 --local expression = "120 % 60"
@@ -534,12 +541,15 @@ local expression = "(2e-3+-5*(59*1+4)/2)"
 --local expression = "23--4+4^3/2*2"
 --local expression = "min(3,2)/2+4"
 --local expression = "-1 + 2"
-local expression = "1+3-5*2/2"
-local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
 local expression = "4+(-4)!+ 1*1/3"
 local expression = "18(+4)"
-local expression = "min(3, max(-2,-1,0,1,2)) + sin 1"
-local expression = "sin pi"
+local expression = "sqrt(-1+4-2)"
+local expression = "2^3-1 * 2^2 + 4 - 5%2/2"
+local expression = "sqrt(-1 +4*2/1)"
+local expression = "2e-3+-5*(59*1+4)/2"
+local expression = "2-(3+-5)*59*1+4/2"
+local expression = "min(-3, max(-2,-1,0,1,2)) + sin 1"
+local expression = "1 + 1 - 1 - 1 * 2 - 3 ^ 4 / 5 / 2 * 2 + 6 - 7 >> 4"
 
 local stack, err = math.postfix(expression)
 

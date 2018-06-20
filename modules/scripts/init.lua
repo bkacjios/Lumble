@@ -67,7 +67,6 @@ client:addCommand("math", function(client, user, cmd, args, raw)
 	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
 
-
 local name_convert = {
 	["Amer"] = "Sancho",
 	["Atsu"] = "Drak",
@@ -75,6 +74,258 @@ local name_convert = {
 	["Paste"] = "Ranger Rick",
 	["Will"] = "Hrangus",
 }
+
+local card_suites = {
+	"&spades;", -- Spades
+	"&diams;",
+	"&clubs;",
+	"&hearts;", -- Hearts
+}
+
+local card_colors = {
+	"%s",
+	"<span style=\"color:#FF0000\">%s</span>",
+	"%s",
+	"<span style=\"color:#FF0000\">%s</span>",
+}
+local card_dim_colors = {
+	"<span style=\"color:#797979\">%s</span>",
+	"<span style=\"color:#ff4a4a\">%s</span>",
+	"<span style=\"color:#797979\">%s</span>",
+	"<span style=\"color:#ff4a4a\">%s</span>",
+}
+
+local card_values = {
+	[1] = {1, 11},
+	[2] = {2, 2},
+	[3] = {3, 3},
+	[4] = {4, 4},
+	[5] = {5, 5},
+	[6] = {6, 6},
+	[7] = {7, 7},
+	[8] = {8, 8},
+	[9] = {9, 9},
+	[10] = {10, 10},
+	[11] = {10, 10},
+	[12] = {10, 10},
+	[13] = {10, 10},
+}
+
+local card_names = {
+	[1] = "A",
+	[2] = "2",
+	[3] = "3",
+	[4] = "4",
+	[5] = "5",
+	[6] = "6",
+	[7] = "7",
+	[8] = "8",
+	[9] = "9",
+	[10] = "10",
+	[11] = "J",
+	[12] = "Q",
+	[13] = "K",
+}
+
+local blackjack_playing = {}
+
+local function drawRandomCard(user)
+	local username = user:getName()
+	local number
+	repeat
+		number = math.random(1,52)
+	until not blackjack_playing[username]["drawn"][number]
+	blackjack_playing[username]["drawn"][number] = true
+	local suit = (number % 4) + 1
+	local value = (number % 13) + 1
+	return { suit_id = suit, suit = card_suites[suit], value = card_values[value], name = card_names[value], id = number, bold = true }
+end
+
+local function getHandValues(user, index)
+	local username = user:getName()
+	local values = {0, 0}
+	local player = blackjack_playing[username]
+	local hand  = player[index]
+	for k,card in pairs(hand) do
+		values[1] = values[1] + card.value[1]
+		values[2] = values[2] + card.value[2]
+	end
+	return values
+end
+
+local function getNiceValueString(values)
+	local hand_value
+	if values[1] == values[2] then
+		hand_value = values[1]
+	else
+		hand_value = table.concat(values, '/')
+	end
+	return hand_value
+end
+
+local function getAllPlayersHands(user, stand)
+	local username = user:getName()
+	local name = name_convert[username] or username
+	local player = blackjack_playing[username]
+	local hand  = player["hand"]
+	local house = player["house"]
+
+	local message = "<p><table><tr><th>Player</th><th>Hand</th><th>Value</th></tr><tr><td>House</td><td><pre><b>"
+
+	for k,card in pairs(house) do
+		if not stand and k > 1 then
+			message = message .. "[?&nbsp;?]"
+		else
+			if card.bold then
+				card.bold = false
+				message = message .. card_colors[card.suit_id]:format(('[%-2s%s]'):format(card.name, card.suit))
+			else
+				message = message .. card_dim_colors[card.suit_id]:format(('[%-2s%s]'):format(card.name, card.suit))
+			end
+		end
+	end
+
+	if not stand then
+		message = message .. ("</b></pre></td><td>%s</td><tr><td>%s</td><td><pre><b>"):format(getNiceValueString(player.house[1].value), name)
+	else
+		message = message .. ("</b></pre></td><td>%s</td><tr><td>%s</td><td><pre><b>"):format(getNiceValueString(getHandValues(user, "house")), name)
+	end
+
+	for k,card in pairs(hand) do
+		if card.bold then
+			card.bold = false
+			message = message .. card_colors[card.suit_id]:format(('[%-2s%s]'):format(card.name, card.suit))
+		else
+			message = message .. card_dim_colors[card.suit_id]:format(('[%-2s%s]'):format(card.name, card.suit))
+		end
+	end
+
+	message = message .. ("</b></pre></td><td>%s</td></table>"):format(getNiceValueString(getHandValues(user, "hand")))
+	return message
+end
+
+local function shouldHouseHit(user)
+	local username = user:getName()
+	local player = blackjack_playing[username]
+	local house = player["house"]
+
+	local house_values = getHandValues(user, "house")
+
+	return house_values[1] < 17 or house_values[2] < 17
+end
+
+local function doHouseHit(user)
+	local username = user:getName()
+	local player = blackjack_playing[username]
+	local house = player["house"]
+	table.insert(house, drawRandomCard(user))
+end
+
+local function doEndGame(user)
+	while shouldHouseHit(user) do
+		doHouseHit(user)
+	end
+end
+
+client:addCommand("hit", function(client, user, cmd, args, raw)
+	local username = user:getName()
+	local name = name_convert[username] or username
+
+	local player = blackjack_playing[username]
+
+	if not player then
+		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You aren't playing a game of !blackjack"
+		log.info(message:stripHTML())
+		user:message(message)
+		return
+	end
+
+	table.insert(player["hand"], drawRandomCard(user))
+
+	local message
+	local hand_values = getHandValues(user, "hand")
+
+	if hand_values[1] > 21 and hand_values[2] > 21 then
+		doEndGame(user)
+
+		message = getAllPlayersHands(user, true)
+
+		local house_values = getHandValues(user, "house")
+		if house_values[1] > 21 and house_values[2] > 21 then
+			message = message .. "<p><b>House &amp; Player bust: <span style=\"color:#aa0000\">LOSS</span></b>"
+		elseif house_values[1] > hand_values[1] then
+			message = message .. "<p><b>House better hand: <span style=\"color:#aa0000\">LOSS</span></b>"
+		else
+			message = message .. "<p><b>Player bust: <span style=\"color:#aa0000\">LOSS</span></b>"
+		end
+
+		blackjack_playing[username] = nil
+	else
+		message = getAllPlayersHands(user)
+	end
+
+	user:getChannel():message(message)
+end)
+
+--[[21 / 41
+21]]
+
+client:addCommand("stay", function(client, user, cmd, args, raw)
+	local username = user:getName()
+	local name = name_convert[username] or username
+
+	local player = blackjack_playing[username]
+	if not player then
+		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You aren't playing a game of !blackjack"
+		log.info(message:stripHTML())
+		user:message(message)
+		return
+	end
+
+	doEndGame(user)
+
+	local message = getAllPlayersHands(user, true)
+	local hand_values = getHandValues(user, "hand")
+	local house_values = getHandValues(user, "house")
+
+	if house_values[1] > 21 and house_values[2] > 21 then
+		message = message .. "<p><b>House bust: <span style=\"color:#00aa00\">WIN</span></b>"
+	elseif house_values[1] == hand_values[1] then
+		message = message .. "<p><b>House tied: <span style=\"color:#3377ff\">DRAW</span></b>"
+	elseif house_values[1] > hand_values[1] then
+		message = message .. "<p><b>House better hand: <span style=\"color:#aa0000\">LOSS</span></b>"
+	elseif house_values[1] < hand_values[1] then
+		message = message .. "<p><b>Player better hand: <span style=\"color:#00aa00\">WIN</span></b>"
+	end
+
+	blackjack_playing[username] = nil
+	user:getChannel():message(message)
+end):alias("stand")
+
+client:addCommand("blackjack", function(client, user, cmd, args, raw)
+	local username = user:getName()
+	local name = name_convert[username] or username
+
+	if blackjack_playing[username] then
+		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You're already playing a game of !blackjack,  please !hit or !stay"
+		log.info(message:stripHTML())
+		user:message(message)
+		return
+	else
+		blackjack_playing[username] = { drawn = {}, hand = {}, house = {} }
+	end
+
+	local player = blackjack_playing[username]
+	local hand  = player["hand"]
+	local house = player["house"]
+
+	table.insert(hand, drawRandomCard(user))
+	table.insert(house, drawRandomCard(user))
+	table.insert(hand, drawRandomCard(user))
+	table.insert(house, drawRandomCard(user))
+
+	user:getChannel():message(getAllPlayersHands(user))
+end)
 
 local inititive = {
 	["Sancho"] = 5,
@@ -239,7 +490,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		end
 		user:getChannel():message(message)
 	end
-end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll"):alias("rtd")
+end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll"):alias("rtd"):alias("rol"):alias("rool"):alias("rrol"):alias("rroll"):alias("rl")
 
 client:addCommand("flip", function(client, user, cmd, args, raw)
 	local number = tonumber(args[1]) or 1
