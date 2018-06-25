@@ -141,13 +141,6 @@ local function drawRandomCard(user)
 	return { suit_id = suit, suit = card_suites[suit], value = card_values[value], name = card_names[value], id = number, bold = true }
 end
 
-local function hasBlackjack(user, index)
-	local username = user:getName()
-	local player = blackjack_playing[username]
-	local hand = player[index]
-	return (hand[1].value[2] == 11 and hand[2].value[1] == 10) or (hand[1].value[2] == 10 and hand[2].value[1] == 11)
-end
-
 local function getHandValues(user, index)
 	local username = user:getName()
 	local values = {0, 0}
@@ -158,6 +151,11 @@ local function getHandValues(user, index)
 		values[2] = values[2] + card.value[2]
 	end
 	return values
+end
+
+local function hasBlackjack(user, index)
+	local values = getHandValues(user, index)
+	return values[2] == 21
 end
 
 local function getNiceValueString(values)
@@ -296,7 +294,7 @@ client:addCommand("stand", function(client, user, cmd, args, raw)
 
 	blackjack_playing[username] = nil
 	user:getChannel():message(message)
-end):alias("stay"):setHelp("Stand in a game of blackjack")
+end):setHelp("Stand in a game of blackjack"):alias("stay")
 
 client:addCommand("blackjack", function(client, user, cmd, args, raw)
 	local username = user:getName()
@@ -569,7 +567,6 @@ client:addCommand("rollstats", function(client, user, cmd, args)
 end):setHelp("Rolls 4D6 and takes the highest 3 values, 6 times")
 
 client:addCommand("help", function(client, user, cmd, args, raw)
-	local debug = args[1] == "user"
 	local message = "<table><tr><th>command</th><th>arguments</th><th>help</th></tr>"
 
 	local commands = {}
@@ -578,10 +575,22 @@ client:addCommand("help", function(client, user, cmd, args, raw)
 		table.insert(commands, info)
 	end
 
-	table.sort(commands, function(a, b) return a.cmd < b.cmd end)
+	table.sort(commands, function(a, b)
+		return (a.cmd < b.cmd) or (a.cmd == b.cmd and a.name < b.name)
+	end)
+
+	local show_all = args[1] == "all" or args[2] == "all"
+	local show_user = args[1] == "user" or args[2] == "user"
 
 	for k, info in pairs(commands) do
-		if ((info.master and (not debug and user:isMaster())) or not info.master) then
+		if ((info.master and (not show_user and user:isMaster())) or not info.master) and not info.aliased then
+			if show_all then
+				for k, sinfo in pairs(commands) do
+					if sinfo.cmd == info.cmd and sinfo.aliased then
+						message = message .. ("<tr><td><i>&nbsp;%s%s</i></td><td>%s</td><td>%s</td></tr>"):format(cmd[1], sinfo.name, sinfo.usage:escapeHTML(), sinfo.help:escapeHTML())
+					end
+				end
+			end
 			message = message .. ("<tr><td><b>%s%s</b></td><td>%s</td><td>%s</td></tr>"):format(cmd[1], info.name, info.usage:escapeHTML(), info.help:escapeHTML())
 		end
 	end
@@ -597,7 +606,7 @@ client:addCommand("source", function(client, user, cmd, args, raw)
 		local fixed = source:gsub("%%", "%%%%"):escapeHTML():gsub("\r", "<br/>"):gsub("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
 		user:message("<p>" .. fixed .. "</p>")
 	end
-end)
+end):setHelp("See the source code of a command"):setUsage("<command name>")
 
 client:addCommand("about", function(client, user, cmd, args, raw)
 	local message = [[<b>LuaBot</b>

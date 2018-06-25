@@ -643,6 +643,7 @@ end
 function COMMAND:alias(name)
 	self.client.commands[name] = setmetatable({
 		name = name,
+		aliased = true,
 		callback = self.callback,
 		usage = self.usage,
 		help = self.help,
@@ -656,9 +657,11 @@ function client:addCommand(cmd, callback)
 	self.commands = self.commands or {}
 	self.commands[cmd] = setmetatable({
 		name = cmd,
+		aliased = false,
 		callback = callback,
 		client = self,
 		cmd = cmd,
+		master = false,
 		help = "",
 		usage = "",
 	}, COMMAND)
