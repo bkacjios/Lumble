@@ -361,10 +361,6 @@ function client:stopStream()
 end
 
 function client:streamAudio()
-	if #self.audio_streams <= 0 then return end
-
-	local b = self:createAudioPacket(4, 0, sequence)
-
 	local biggest_pcm_size = 0
 
 	ffi.fill(self.audio_buffer, ffi.sizeof(self.audio_buffer))
@@ -394,9 +390,11 @@ function client:streamAudio()
 		encoded_len = bor(lshift(1, 13), encoded_len)
 	end
 
-	if bit.band(encoded_len, 0x2000) == 0x2000 then
+	--[[if bit.band(encoded_len, 0x2000) == 0x2000 then
 		print("end of stream")
-	end
+	end]]
+
+	local b = self:createAudioPacket(4, 0, sequence)
 
 	b:writeMumbleVarInt(encoded_len)
 	b:write(ffi.string(encoded, encoded_len))
