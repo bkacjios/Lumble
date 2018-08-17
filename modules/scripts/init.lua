@@ -376,11 +376,7 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 	table.insert(rolled_initiatives, {name = name, roll = total, bonus = bonus})
 	table.sort(rolled_initiatives, function(a, b) return a.roll + a.bonus > b.roll + b.bonus end)
 
-	if not client:isPlaying() then
-		local stream = client:createOggStream(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)))
-		stream:setVolume(1)
-		client:playOggStream(stream)
-	end
+	client:playOgg(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)), 2, 0.5)
 
 	user:getChannel():message(message)
 end):setHelp("Roll for initiative"):setUsage("[clear, list]"):alias("init")
@@ -477,13 +473,9 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	if cmd:sub(2) == "proll" then
 		user:message(message)
 	else
-		if not client:isPlaying() then
-			local sound_num = math.min(num_rolls, 6)
-			local rand = math.random(1, 2)
-			local stream = client:createOggStream(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, rand))
-			stream:setVolume(1)
-			client:playOggStream(stream)
-		end
+		local sound_num = math.min(num_rolls, 6)
+		local rand = math.random(1, 2)
+		client:playOgg(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, rand), 2, 0.5)
 		user:getChannel():message(message)
 	end
 end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll"):alias("rtd"):alias("rol"):alias("rool"):alias("rrol"):alias("rroll"):alias("rl")
@@ -519,11 +511,7 @@ client:addCommand("flip", function(client, user, cmd, args, raw)
 	if cmd:sub(2) == "pflip" then
 		user:message(message)
 	else
-		if not client:isPlaying() then
-			local stream = client:createOggStream(("audio/dnd/coin_flip-%d.ogg"):format(math.random(1,2)))
-			stream:setVolume(1)
-			client:playOggStream(stream)
-		end
+		client:playOgg(("audio/dnd/coin_flip-%d.ogg"):format(math.random(1,2)), 3, 0.5)
 		user:getChannel():message(message)
 	end
 end):setHelp("Flip a coin"):setUsage("[#coins = 1]"):alias("pflip")
@@ -544,12 +532,7 @@ client:addCommand("rollstats", function(client, user, cmd, args)
 		table.insert(stats, stat)
 	end
 
-	if not client:isPlaying() then
-		local stream = client:createOggStream(("audio/dnd/dice_roll_4-%d.ogg"):format(math.random(1, 2)))
-		stream:setVolume(1)
-		client:playOggStream(stream)
-	end
-
+	client:playOgg(("audio/dnd/dice_roll_4-%d.ogg"):format(math.random(1, 2)), 2, 0.5)
 	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#3377ff\">%s</span></b>", user:getName(), table.concat(stats, ", "))
 end):setHelp("Rolls 4D6 and takes the highest 3 values, 6 times")
 
@@ -603,7 +586,7 @@ Created by <a href="https://github.com/Someguynamedpie">Somepotato</a> &amp; <a 
 end, "Get some information about LuaBot")
 
 client:addCommand("play", function(client, user, cmd, args, raw)
-	client:playOgg(("audio/%s.ogg"):format(args[1]), tonumber(args[2]))
+	client:playOgg(("audio/%s.ogg"):format(args[1]), nil, nil, tonumber(args[2]))
 end):setHelp("Play an audio file"):setUsage("<file> [volume]")
 
 local restricted = {}
@@ -652,7 +635,9 @@ end):setHelp("Set the volume of any playing audio"):setUsage("<volume>")
 local playlist = {}
 local track = 0
 
-local function playPlaylist(client)
+local function playPlaylist(client, channel)
+	if channel ~= 1 then return end
+
 	if track >= #playlist then
 		track = 0
 	end
@@ -663,7 +648,7 @@ local function playPlaylist(client)
 	end
 end
 
-client:hook("AudioFinish", playPlaylist)
+client:hook("AudioStreamFinish", playPlaylist)
 
 client:addCommand("dnd", function(client, user, cmd, args, raw)
 	playlist = {}
@@ -703,12 +688,12 @@ client:addCommand("dnd", function(client, user, cmd, args, raw)
 		client:getPlaying():fadeOut(5)
 	else
 		track = 0
-		playPlaylist(client)
+		playPlaylist(client, 1)
 	end
 end):setHelp("Set music for D&D"):setUsage("<mood>"):alias("mood")
 
 client:addCommand("fade", function(client, user, cmd, args, raw)
-	client.playing:fadeOut(tonumber(args[1]) or 5)
+	client:getPlaying():fadeOut(tonumber(args[1]) or 5)
 end):setHelp("Fade out the current audio")
 
 client:addCommand("afk", function(client, user, cmd, args, raw)

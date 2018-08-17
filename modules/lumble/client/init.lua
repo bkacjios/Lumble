@@ -90,7 +90,9 @@ function client.new(host, port, params)
 		hooks = {},
 		commands = {},
 		start = socket.gettime(),
+		audio_streams = {},
 		audio_volume = 0.25,
+		audio_buffer = ffi.new('float[?]', FRAME_SIZE),
 	}
 	return setmetatable(meta, client)
 end
@@ -112,23 +114,24 @@ function client:createOggStream(file, volume)
 	return ogg, err
 end
 
-function client:playOggStream(stream)
-	self.playing = stream
+function client:playOggStream(stream, channel)
+	self.audio_streams[channel or 1] = stream
 end
 
-function client:playOgg(file, count)
-	local ogg, err = stream(file, self.audio_volume, count)
+function client:playOgg(file, channel, volume, count)
+	local ogg, err = stream(file, volume or self.audio_volume, count)
 	if ogg then
-		self.playing = ogg
+		self.audio_streams[channel or 1] = ogg
 		return ogg
 	end
 	return ogg, err
 end
 
-function client:setVolume(volume)
+function client:setVolume(volume, channel)
+	channel = channel or 1
 	self.audio_volume = volume
-	if self.playing then
-		self.playing:setVolume(volume)
+	if self.audio_streams[channel] then
+		self.audio_streams[channel]:setVolume(volume)
 	end
 end
 
@@ -269,8 +272,8 @@ function client:update()
 
 					if self.users[session].talking ~= talking then
 						self.users[session].talking = talking
-						if self.playing then
-							self.playing:setUserTalking(talking)
+						if self.audio_streams[1] then
+							self.audio_streams[1]:setUserTalking(talking)
 						end
 					end
 
@@ -339,39 +342,61 @@ function client:createAudioPacket(mode, target, seq)
 	return b
 end
 
-function client:getPlaying()
-	return self.playing
+function client:getPlaying(channel)
+	return self.audio_streams[channel or 1]
 end
 
-function client:isPlaying()
-	return self.playing ~= nil
+function client:isPlaying(channel)
+	return self.audio_streams[channel or 1] ~= nil
+end
+
+function client:stopAudioStream(channel)
+	if not self.audio_streams[channel or 1] then return end
+	self.audio_streams[channel or 1] = nil
+	self:hookCall("AudioStreamFinish", channel)
 end
 
 function client:stopStream()
-	if not self.playing then return end
-	self.playing = nil
 	self:hookCall("AudioFinish")
 end
 
 function client:streamAudio()
-	if not self.playing then return end
+	if #self.audio_streams <= 0 then return end
 
 	local b = self:createAudioPacket(4, 0, sequence)
 
-	local pcm, pcm_size = self.playing:streamSamples(FRAME_DURATION)
-	if not pcm or pcm_size <= 0 then self:stopStream() return end
+	local biggest_pcm_size = 0
 
-	local encoded, encoded_len = self.encoder:encode(pcm, FRAME_SIZE, FRAME_SIZE, 0x1FFF)
+	ffi.fill(self.audio_buffer, ffi.sizeof(self.audio_buffer))
+
+	for channel, stream in pairs(self.audio_streams) do
+		local pcm, pcm_size = stream:streamSamples(FRAME_DURATION)
+		if pcm_size > biggest_pcm_size then
+			biggest_pcm_size = pcm_size
+		end
+
+		if not pcm or pcm_size <= 0 then
+			self:stopAudioStream(channel)
+		else
+			for i=0,FRAME_SIZE-1 do
+				self.audio_buffer[i] = self.audio_buffer[i] + pcm[i]
+			end
+		end
+	end
+
+	if biggest_pcm_size <= 0 then return end
+
+	local encoded, encoded_len = self.encoder:encode(self.audio_buffer, FRAME_SIZE, FRAME_SIZE, 0x1FFF)
 	if not encoded or encoded_len <= 0 then self:stopStream() return end
 
-	if pcm_size < FRAME_SIZE then
+	if biggest_pcm_size < FRAME_SIZE then
 		-- Set 14th bit to 1 to signal end of stream
 		encoded_len = bor(lshift(1, 13), encoded_len)
 	end
 
-	--[[if bit.band(encoded_len, 0x2000) == 0x2000 then
+	if bit.band(encoded_len, 0x2000) == 0x2000 then
 		print("end of stream")
-	end]]
+	end
 
 	b:writeMumbleVarInt(encoded_len)
 	b:write(ffi.string(encoded, encoded_len))

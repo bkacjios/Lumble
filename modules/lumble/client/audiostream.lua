@@ -15,10 +15,10 @@ local function AudioStream(path, volume, count)
 
 	return setmetatable({
 		vorbis = vorbis,
-		volume = volume or 0.25,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
 		buffer = {},
+		volume = volume or 0.25,
 		loop_count = count or 0,
 		talking_count = 0,
 		fade_volume = 1,
@@ -27,6 +27,7 @@ local function AudioStream(path, volume, count)
 		duck_volume = 1,
 		duck_frames = 0,
 		duck_frames_left = 0,
+		ducked = false,
 	}, STREAM)
 end
 
@@ -40,9 +41,12 @@ end
 
 function STREAM:setUserTalking(talking)
 	self.talking_count = self.talking_count + (talking and 1 or -1)
-	if self.talking_count >= 1 then
-		self.duck_volume = 0.25
+	if self.talking_count >= 1 and not ducked then
+		ducked = true
+		--self.duck_volume = 0.25
+		self:duckTo(0.25, 0.2)
 	else
+		ducked = false
 		self:duckTo(1, 1)
 	end
 end
@@ -54,11 +58,9 @@ function STREAM:streamSamples(duration)
 		log.warn("frame too large for audio packet..", frame_size)
 	end]]
 
-	self.buffer[frame_size] = self.buffer[frame_size] or ffi.new('float[?]', frame_size)
+	self.buffer[frame_size] = self.buffer[frame_size] or new('float[?]', frame_size)
 
-	local samples = self.buffer[frame_size]
-
-	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 1, samples, frame_size)
+	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 1, self.buffer[frame_size], frame_size)
 
 	local fade_percent = 1
 	local duck_percent = 1
@@ -86,11 +88,13 @@ function STREAM:streamSamples(duration)
 			self.duck_volume = self.duck_to_volume + (self.duck_from_volume - self.duck_to_volume) * duck_percent
 		end
 
-		samples[i] = samples[i] * self.volume * self.fade_volume * self.duck_volume
+		self.buffer[frame_size][i] = self.buffer[frame_size][i] * self.volume * self.fade_volume * self.duck_volume
+
+		--print(samples[i])
 		-- * 0.5 * (1+math.sin(2 * math.pi * 0.1 * socket.gettime()))
 	end
 
-	return samples, num_samples
+	return self.buffer[frame_size], num_samples
 end
 
 function STREAM:setVolume(volume)
