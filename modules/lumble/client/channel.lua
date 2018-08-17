@@ -68,6 +68,15 @@ function channel:getUsers()
 	return users
 end
 
+function channel:isUserTalking()
+	for session, user in pairs(self.client.users) do
+		if user:isTalking() then
+			return true
+		end
+	end
+	return false
+end
+
 function channel:getChildren()
 	local children = {}
 	for id, channel in pairs(self.client.channels) do

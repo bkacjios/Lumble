@@ -29,7 +29,7 @@ require("extensions.string")
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
 
-local FRAME_DURATION = 10 -- ms
+local FRAME_DURATION = 60 -- ms
 local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
 local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
 local PCM_LEN = PCM_SIZE / 2
@@ -107,8 +107,8 @@ function client:isSynced()
 	return self.synced
 end
 
-function client:createOggStream(file)
-	local ogg, err = stream(file)
+function client:createOggStream(file, volume)
+	local ogg, err = stream(file, volume)
 	return ogg, err
 end
 
@@ -117,10 +117,8 @@ function client:playOggStream(stream)
 end
 
 function client:playOgg(file, count)
-	local ogg, err = stream(file)
+	local ogg, err = stream(file, self.audio_volume, count)
 	if ogg then
-		ogg:setVolume(self.audio_volume)
-		ogg:loop(count)
 		self.playing = ogg
 		return ogg
 	end
@@ -232,7 +230,7 @@ function client:update()
 	if not next_ping or next_ping <= now then
 		next_ping = now + 5
 		self:pingTCP()
-		self:pingUDP()
+		--self:pingUDP()
 	end
 
 	local read = true
@@ -267,7 +265,14 @@ function client:update()
 					local sequence = voice:readMumbleVarInt()
 					local voice_header = voice:readMumbleVarInt()
 
-					self.users[session].talking = bit.band(voice_header, 0x2000) ~= 0x2000
+					local talking = bit.band(voice_header, 0x2000) ~= 0x2000
+
+					if self.users[session].talking ~= talking then
+						self.users[session].talking = talking
+						if self.playing then
+							self.playing:setUserTalking(talking)
+						end
+					end
 
 					--[[local b = self:createAudioPacket(4, target, sequence)
 
@@ -313,11 +318,13 @@ function client:createAudioStream()
 
 	-- Get the length of our timer..
 	-- We send two packets at once so we double our frame duration
-	local time = FRAME_DURATION * 2 / 1000
+	local count = 1
+	local time = FRAME_DURATION * count / 1000
 	self.audio_timer = ev.Timer.new(function()
-		-- Send two audio packets at once
-		self:streamAudio()
-		self:streamAudio()
+		-- Send multiple audio packets at once if desired
+		for i=1,count do
+			self:streamAudio()
+		end
 	end, time, time)
 	self.audio_timer:start(ev.Loop.default)
 end
@@ -361,6 +368,10 @@ function client:streamAudio()
 		-- Set 14th bit to 1 to signal end of stream
 		encoded_len = bor(lshift(1, 13), encoded_len)
 	end
+
+	--[[if bit.band(encoded_len, 0x2000) == 0x2000 then
+		print("end of stream")
+	end]]
 
 	b:writeMumbleVarInt(encoded_len)
 	b:write(ffi.string(encoded, encoded_len))
