@@ -391,7 +391,7 @@ end
 function BUFFER:peekPattern(pattern)
 	local _, pos = self:toString(self.position + 1):find(pattern)
 	if pos then
-		return self:peek(pos)
+		return self:peek(pos), pos
 	end
 end
 

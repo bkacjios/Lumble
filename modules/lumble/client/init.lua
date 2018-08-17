@@ -10,17 +10,19 @@ local proto = require("lumble.proto")
 local event = require("lumble.event")
 
 local opus = require("lumble.opus")
-local stream = require("lumble.client.audiostream")
 
 local buffer = require("buffer")
---local copas = require("copas")
-local socket = require("socket")
 local ssl = require("ssl")
-local bit = require("bit")
 local log = require("log")
 local util = require("util")
 
+local bit = require("bit")
 local ffi = require("ffi")
+local ev = require("ev")
+--local copas = require("copas")
+local socket = require("socket")
+
+local stream = require("lumble.client.audiostream")
 
 require("extensions.string")
 
@@ -88,7 +90,7 @@ function client.new(host, port, params)
 		hooks = {},
 		commands = {},
 		start = socket.gettime(),
-		volume = 0.4,
+		audio_volume = 0.25,
 	}
 	return setmetatable(meta, client)
 end
@@ -117,7 +119,7 @@ end
 function client:playOgg(file, count)
 	local ogg, err = stream(file)
 	if ogg then
-		ogg:setVolume(self.volume)
+		ogg:setVolume(self.audio_volume)
 		ogg:loop(count)
 		self.playing = ogg
 		return ogg
@@ -126,14 +128,14 @@ function client:playOgg(file, count)
 end
 
 function client:setVolume(volume)
-	self.volume = volume
+	self.audio_volume = volume
 	if self.playing then
 		self.playing:setVolume(volume)
 	end
 end
 
 function client:getVolume()
-	return self.volume
+	return self.audio_volume
 end
 
 function client:hook(name, desc, callback)
@@ -210,7 +212,7 @@ function client:pingTCP()
 	local ping = packet.new("Ping")
 	ping:set("timestamp", self:getTime() * 1000)
 	ping:set("tcp_packets", self.ping.tcp_packets)
-	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)	
+	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
 	self:send(ping)
 end
 
@@ -260,24 +262,27 @@ function client:update()
 				local codec = bit.rshift(header, 5)
 				local target = bit.band(header, 31)
 
-				local session = voice:readMumbleVarInt()
-				local sequence = voice:readMumbleVarInt()
+				if codec == 4 then
+					local session = voice:readMumbleVarInt()
+					local sequence = voice:readMumbleVarInt()
+					local voice_header = voice:readMumbleVarInt()
 
-				local voice_header = voice:readByte()
+					self.users[session].talking = bit.band(voice_header, 0x2000) ~= 0x2000
 
-				local b = self:createAudioPacket(4, target, sequence)
+					--[[local b = self:createAudioPacket(4, target, sequence)
 
-				local all = voice:readAll()
+					local all = voice:readAll()
 
-				b:writeByte(voice_header)
-				b:write(all)
+					b:writeMumbleVarInt(voice_header)
+					b:write(all)
 
-				b:seek("set", 2)
-				b:writeInt(b.length - 6) -- Set size of payload
+					b:seek("set", 2)
+					b:writeInt(b.length - 6) -- Set size of payload
 
-				--record:write(all)
+					--record:write(all)
 
-				--self.tcp:send(b:toString())
+					self.tcp:send(b:toString())]]
+				end
 			else
 				local packet = packet.new(id, read)
 				self:onPacket(packet)
@@ -303,13 +308,27 @@ local sequence = 1
 local bor = bit.bor
 local lshift = bit.lshift
 
+function client:createAudioStream()
+	if self.audio_timer then return end
+
+	-- Get the length of our timer..
+	-- We send two packets at once so we double our frame duration
+	local time = FRAME_DURATION * 2 / 1000
+	self.audio_timer = ev.Timer.new(function()
+		-- Send two audio packets at once
+		self:streamAudio()
+		self:streamAudio()
+	end, time, time)
+	self.audio_timer:start(ev.Loop.default)
+end
+
 function client:createAudioPacket(mode, target, seq)
 	local b = buffer()
 	b:writeShort(1) -- Type UDPTunnel
 	b:writeInt(0) -- Size of payload
 	local header = bor(lshift(mode, 5), target)
 	b:writeByte(header)
-	b:writeMumbleVarInt(seq, 2)
+	b:writeMumbleVarInt(seq)
 	return b
 end
 
@@ -339,10 +358,11 @@ function client:streamAudio()
 	if not encoded or encoded_len <= 0 then self:stopStream() return end
 
 	if pcm_size < FRAME_SIZE then
+		-- Set 14th bit to 1 to signal end of stream
 		encoded_len = bor(lshift(1, 13), encoded_len)
 	end
 
-	b:writeMumbleVarInt(encoded_len, 2)
+	b:writeMumbleVarInt(encoded_len)
 	b:write(ffi.string(encoded, encoded_len))
 
 	b:seek("set", 2)
@@ -403,6 +423,7 @@ function client:onServerSync(packet)
 	self.config.max_bandwidth = packet.max_bandwidth
 	self.me = self.users[self.session]
 	log.info("message: %s", packet.welcome_text:stripHTML())
+	self:createAudioStream()
 	self:hookCall("OnServerSync", self.me)
 end
 

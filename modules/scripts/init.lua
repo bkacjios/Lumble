@@ -2,7 +2,6 @@ local afk = require("scripts.afk")
 local lua = require("scripts.lua")
 local mumble = require("lumble")
 local log = require("log")
-local ev = require("ev")
 local lfs = require("lfs")
 local config = require("config")
 require("shunting")
@@ -21,19 +20,7 @@ local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
 if not client then return end
 client:auth("LuaBot", "", {"dnd"})
 
-local socket = require("socket")
-
-local function createStream(client)
-	local timer = ev.Timer.new(function()
-		for i=1,2 do
-			client:streamAudio()
-		end
-	end, 0.02, 0.02)
-	timer:start(ev.Loop.default)
-end
-
 client:hook("OnServerSync", function(client, me)
-	createStream(client)
 	--[[local channel = client:getChannel("DongerBots Chamber of sentience learning")
 	me:move(channel)]]
 	--me:setRecording(true)
@@ -339,7 +326,7 @@ end):setHelp("Start a game of blackjack")
 local inititive = {
 	["Sancho"] = 5,
 	["Drak"] = 4,
-	["Bhord"] = 0,
+	["Bhord"] = 1,
 	["Ranger Rick"] = 5,
 	["Hrangus"] = 1,
 }
@@ -522,9 +509,9 @@ client:addCommand("flip", function(client, user, cmd, args, raw)
 	local message
 
 	if #results > 1 then
-		message = ("<b>%s</b> flipped <i>%d coins</i> and got <b><span style=\"color:#3377ff\">%d heads</span></b> and <b><span style=\"color:#3377ff\">%d tails</span></b>"):format(name, #results, num_heads, num_tails)
+		message = ("<p><b>%s</b> flipped <i>%d coins</i> and got <b><span style=\"color:#3377ff\">%d heads</span></b> and <b><span style=\"color:#3377ff\">%d tails</span></b>"):format(name, #results, num_heads, num_tails)
 	else
-		message = ("<b>%s</b> flipped a coin and got <b><span style=\"color:#3377ff\">%s</span></b>"):format(name, results[1])
+		message = ("<p><b>%s</b> flipped a coin and got <b><span style=\"color:#3377ff\">%s</span></b>"):format(name, results[1])
 	end
 
 	log.info(message:stripHTML())
@@ -694,7 +681,7 @@ client:addCommand("dnd", function(client, user, cmd, args, raw)
 		local moods = {}
 
 		for file in lfs.dir("audio/dnd") do
-			if lfs.attributes(path,"mode") ~= "directory" and file ~= "." and file ~= ".." then
+			if lfs.attributes("audio/dnd/" .. file, "mode") == "directory" and file ~= "." and file ~= ".." then
 				table.insert(moods, file)
 			end
 		end
@@ -838,7 +825,7 @@ client:hook("OnTextMessage", "Thumbnails", function(client, event)
 
 	local youtube = message:match("youtube%.com/watch.-v=([%w_-]+)") or message:match("youtu%.be/([%w_-]+)" )
 	local twitch = message:match("clips.twitch.tv/(%w+)")
-	local other = message:match("(https?://[%w%p]+)")
+	--local other = message:match("(https?://[%w%p]+)")
 
 	if youtube then
 		user:getChannel():message(formatYoutube(youtube))
@@ -846,10 +833,10 @@ client:hook("OnTextMessage", "Thumbnails", function(client, event)
 	if twitch then
 		user:getChannel():message(formatTwitch(twitch))
 	end
-	if other then
+	--[[if other then
 		local ext = string.ExtensionFromFile(other):lower()
 		if valid_others[ext] then
 			user:getChannel():message(formatOther(other))
 		end
-	end
+	end]]
 end)

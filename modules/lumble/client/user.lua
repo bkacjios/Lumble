@@ -111,6 +111,10 @@ function user:getID()
 	return self.user_id or 0
 end
 
+function user:isTalking()
+	return self.talking or false
+end
+
 function user:isMute()
 	return self.mute
 end

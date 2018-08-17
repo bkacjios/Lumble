@@ -57,7 +57,7 @@ function autoreload.watch(module)
 	local file, crc = autoreload.getPackageFile(module)
 
 	if not file then
-		--log.warn("lua module '".. module .. "' not found: skipping, probably C module")
+		log.warn("lua module '".. module .. "' not found: skipping, probably C module")
 		return
 	end
 

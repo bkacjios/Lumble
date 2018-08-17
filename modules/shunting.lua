@@ -1,6 +1,9 @@
 local Buffer = require("buffer")
 
 function math.factorial(n)
+	if n == 0 then
+		return 1
+	end
 	for i=1, n-1 do
 		n = n * i
 	end
@@ -110,10 +113,22 @@ local operators = {
 		method = function(a) return -a end,
 		args = 1,
 	},
+	["x"] = {
+		precedence = 3,
+		associativity = "left",
+		method = function(a, b) return a * b end,
+		args = 2,
+	},
 	["*"] = {
 		precedence = 3,
 		associativity = "left",
 		method = function(a, b) return a * b end,
+		args = 2,
+	},
+	["÷"] = {
+		precedence = 3,
+		associativity = "left",
+		method = function(a, b) return a / b end,
 		args = 2,
 	},
 	["/"] = {
@@ -186,6 +201,7 @@ local functions = {
 
 local constants = {
 	["pi"] = math.pi,
+	["π"] = math.pi,
 	["inf"] = math.huge,
 	["e"] = math.exp(1),
 }
@@ -217,23 +233,28 @@ local function peekToken(buf, size)
 end
 
 local function readToken(buf)
-	local peek = peekToken(buf, 1) --buf:peek(1)
+	local peek1, peek2, peek3 = peekToken(buf, 1), peekToken(buf, 2), peekToken(buf, 3)
+	local peekfunc, peekfunclen = buf:peekPattern("^%a+")
 
-	if tonumber(peek) then
+	-- Check if token is a number
+	if tonumber(peek1) then
 		return readNumber(buf)
 	-- Check 3 character operators first
-	elseif operators[peekToken(buf, 3)] then
+	elseif operators[peek3] or constants[peek3] then
 		return buf:readLen(3)
 	-- Check 2 character operators second
-	elseif operators[peekToken(buf, 2)] then
+	elseif operators[peek2] or constants[peek2] then
 		return buf:readLen(2)
 	-- Check 1 character operators last
-	elseif operators[peek] or peek == '(' or peek == ')' or peek == ',' then
+	elseif operators[peek1] or constants[peek1] or peek1 == '(' or peek1 == ')' or peek1 == ',' then
 		return buf:readChar()
-	else
-		-- Fall back to a function or constant name
-		return buf:readPattern("^%a+")
+	-- Fall back to a function name
+	elseif functions[peekfunc] then
+		return buf:readLen(peekfunclen)
 	end
+
+	-- Read everything? Should cause an invalid token error
+	return buf:readAll()
 end
  
 function math.postfix(str)
@@ -467,19 +488,25 @@ function math.infix_to_string(node, infunc)
 		return node.value
 	elseif node.kind == "function" then
 		local str = node.func .. '('
-
 		for k,arg in pairs(node.args) do
 			str = str .. math.infix_to_string(arg, true)
 			if k < #node.args then
 				str = str .. ', '
 			end
 		end
-
 		return str .. ')'
 	elseif node.kind == "unary" then
 		local val
 		if node.associativity == "left" then
-			val = math.infix_to_string(node.node) .. node.operator
+			if node.operator == "!" then
+				if node.node.kind == "number" then
+					val = math.infix_to_string(node.node) .. node.operator
+				else
+					val = '(' .. math.infix_to_string(node.node) .. ')' .. node.operator
+				end
+			else
+				val = math.infix_to_string(node.node) .. node.operator
+			end
 		else
 			val = node.operator .. math.infix_to_string(node.node)
 		end
@@ -532,15 +559,15 @@ function math.solve_postfix(tbl)
 	return table.remove(stack)
 end
 
---local expression = "random(1,5)"
---local expression = "-min(0xf.0e0p1,0x12p2)+(2e-3+-5*(59*1+4)/2)"
---local expression = "3e1 + 1"
---local expression = "-sqrt(1 << 4)!"
---local expression = "120 % 60"
---local expression = "1 + 3 / 2 ^ 4"
---local expression = "23--4+4^3/2*2"
---local expression = "min(3,2)/2+4"
---local expression = "-1 + 2"
+--[[local expression = "random(1,5)"
+local expression = "-min(0xf.0e0p1,0x12p2)+(2e-3+-5*(59*1+4)/2)"
+local expression = "3e1 + 1"
+local expression = "-sqrt(1 << 4)!"
+local expression = "120 % 60"
+local expression = "1 + 3 / 2 ^ 4"
+local expression = "23--4+4^3/2*2"
+local expression = "min(3,2)/2+4"
+local expression = "-1 + 2"
 local expression = "4+(-4)!+ 1*1/3"
 local expression = "18(+4)"
 local expression = "sqrt(-1+4-2)"
@@ -550,6 +577,8 @@ local expression = "2e-3+-5*(59*1+4)/2"
 local expression = "2-(3+-5)*59*1+4/2"
 local expression = "min(-3, max(-2,-1,0,1,2)) + sin 1"
 local expression = "1 + 1 - 1 - 1 * 2 - 3 ^ 4 / 5 / 2 * 2 + 6 - 7"
+local expression = "(6-1)! + 0! + -1/5^2"
+local expression = "6-1x0+2÷2+π"
 
 local stack, err = math.postfix(expression)
 
@@ -566,4 +595,4 @@ print(expression .. " = " .. total)
 
 local node = math.postfix_to_infix(stack)
 
-print(math.infix_to_string(node))
+print(math.infix_to_string(node))]]
