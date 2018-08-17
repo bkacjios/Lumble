@@ -89,8 +89,6 @@ function STREAM:streamSamples(duration)
 		end
 
 		self.buffer[frame_size][i] = self.buffer[frame_size][i] * self.volume * self.fade_volume * self.duck_volume
-
-		--print(samples[i])
 		-- * 0.5 * (1+math.sin(2 * math.pi * 0.1 * socket.gettime()))
 	end
 

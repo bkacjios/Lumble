@@ -350,16 +350,6 @@ function client:isPlaying(channel)
 	return self.audio_streams[channel or 1] ~= nil
 end
 
-function client:stopAudioStream(channel)
-	if not self.audio_streams[channel or 1] then return end
-	self.audio_streams[channel or 1] = nil
-	self:hookCall("AudioStreamFinish", channel)
-end
-
-function client:stopStream()
-	self:hookCall("AudioFinish")
-end
-
 function client:streamAudio()
 	local biggest_pcm_size = 0
 
@@ -372,7 +362,8 @@ function client:streamAudio()
 		end
 
 		if not pcm or pcm_size <= 0 then
-			self:stopAudioStream(channel)
+			self.audio_streams[channel] = nil
+			self:hookCall("AudioStreamFinish", channel)
 		else
 			for i=0,FRAME_SIZE-1 do
 				self.audio_buffer[i] = self.audio_buffer[i] + pcm[i]
@@ -383,7 +374,7 @@ function client:streamAudio()
 	if biggest_pcm_size <= 0 then return end
 
 	local encoded, encoded_len = self.encoder:encode(self.audio_buffer, FRAME_SIZE, FRAME_SIZE, 0x1FFF)
-	if not encoded or encoded_len <= 0 then self:stopStream() return end
+	if not encoded or encoded_len <= 0 then self:hookCall("AudioFinish") return end
 
 	if biggest_pcm_size < FRAME_SIZE then
 		-- Set 14th bit to 1 to signal end of stream

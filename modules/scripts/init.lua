@@ -735,8 +735,7 @@ function twitchHttps(url, ...)
 	return r, c, h
 end
 
-
-local function formatTwitch(id)
+local function formatTwitchClip(id)
 	local req = twitchHttps(("https://api.twitch.tv/helix/clips?id=%s"):format(id))
 	if not req then return end
 	if( #req == 0 ) then return end
@@ -761,6 +760,35 @@ local function formatTwitch(id)
 	</tr>
 </table></center>
 ]]):format(items.title, items.url, items.thumbnail_url):gsub("%%", "%%%%")
+end
+
+local function formatTwitch(id)
+	local req = twitchHttps(("https://api.twitch.tv/kraken/streams/%s"):format(id))
+	if not req then return end
+	if( #req == 0 ) then return end
+
+	local js = json.decode(req)
+
+	local stream = js.stream
+
+	if not stream then return "Invalid twitch.tv stream." end
+
+	table.foreach(stream, print)
+
+	return ([[
+<center><table>
+	<tr>
+		<td align="center" valign="middle">
+			<h3>%s</h3>
+		</td>
+	</tr>
+	<tr>
+		<td align="center">
+			<a href="%s"><img src="%s" width="250" /></a>
+		</td>
+	</tr>
+</table></center>
+]]):format(stream.channel.status, stream.channel.url, stream.preview.medium):gsub("%%", "%%%%")
 end
 
 local function formatYoutube(id)
@@ -809,11 +837,15 @@ client:hook("OnTextMessage", "Thumbnails", function(client, event)
 	local user = event.actor
 
 	local youtube = message:match("youtube%.com/watch.-v=([%w_-]+)") or message:match("youtu%.be/([%w_-]+)" )
-	local twitch = message:match("clips.twitch.tv/(%w+)")
+	local twitchclip = message:match("clips.twitch.tv/(%w+)")
+	local twitch = message:match("twitch.tv/(%w+)")
 	--local other = message:match("(https?://[%w%p]+)")
 
 	if youtube then
 		user:getChannel():message(formatYoutube(youtube))
+	end
+	if twitchclip then
+		user:getChannel():message(formatTwitchClip(twitch))
 	end
 	if twitch then
 		user:getChannel():message(formatTwitch(twitch))
