@@ -16,15 +16,17 @@ local function AudioStream(path, volume, count)
 	return setmetatable({
 		vorbis = vorbis,
 		volume = volume or 0.25,
-		fade_volume = 1,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
 		buffer = {},
 		loop_count = count or 0,
-		frames_to_fade = 0,
-		frames_faded_left = 0,
-		is_user_talking = false,
 		talking_count = 0,
+		fade_volume = 1,
+		fade_frames = 0,
+		fade_frames_left = 0,
+		duck_volume = 1,
+		duck_frames = 0,
+		duck_frames_left = 0,
 	}, STREAM)
 end
 
@@ -39,9 +41,9 @@ end
 function STREAM:setUserTalking(talking)
 	self.talking_count = self.talking_count + (talking and 1 or -1)
 	if self.talking_count >= 1 then
-		self.fade_volume = 0.25
+		self.duck_volume = 0.25
 	else
-		self:fadeTo(1, 1)
+		self:duckTo(1, 1)
 	end
 end
 
@@ -59,6 +61,7 @@ function STREAM:streamSamples(duration)
 	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 1, samples, frame_size)
 
 	local fade_percent = 1
+	local duck_percent = 1
 
 	if num_samples < frame_size and self.loop_count > 1 then
 		self.loop_count = self.loop_count - 1
@@ -66,10 +69,10 @@ function STREAM:streamSamples(duration)
 	end
 
 	for i=0,num_samples-1 do
-		if self.frames_to_fade > 0 then
-			if self.frames_faded_left > 0 then
-				self.frames_faded_left = self.frames_faded_left - 1
-				fade_percent = self.frames_faded_left / self.frames_to_fade
+		if self.fade_frames > 0 then
+			if self.fade_frames_left > 0 then
+				self.fade_frames_left = self.fade_frames_left - 1
+				fade_percent = self.fade_frames_left / self.fade_frames
 				self.fade_volume = self.fade_to_volume + (self.fade_from_volume - self.fade_to_volume) * fade_percent
 			elseif self.fade_stop then
 				self:seek("end")
@@ -77,7 +80,13 @@ function STREAM:streamSamples(duration)
 			end
 		end
 
-		samples[i] = samples[i] * self.fade_volume * self.volume
+		if self.duck_frames > 0 and self.duck_frames_left > 0 then
+			self.duck_frames_left = self.duck_frames_left - 1
+			duck_percent = self.duck_frames_left / self.duck_frames
+			self.duck_volume = self.duck_to_volume + (self.duck_from_volume - self.duck_to_volume) * duck_percent
+		end
+
+		samples[i] = samples[i] * self.volume * self.fade_volume * self.duck_volume
 		-- * 0.5 * (1+math.sin(2 * math.pi * 0.1 * socket.gettime()))
 	end
 
@@ -94,10 +103,17 @@ function STREAM:fadeOut(time)
 end
 
 function STREAM:fadeTo(volume, time)
-	self.frames_to_fade = self.info.sample_rate * (time or 1)
-	self.frames_faded_left = self.frames_to_fade
+	self.fade_frames = self.info.sample_rate * (time or 1)
+	self.fade_frames_left = self.fade_frames
 	self.fade_from_volume = self.fade_volume
 	self.fade_to_volume = volume
+end
+
+function STREAM:duckTo(volume, time)
+	self.duck_frames = self.info.sample_rate * (time or 1)
+	self.duck_frames_left = self.duck_frames
+	self.duck_from_volume = self.duck_volume
+	self.duck_to_volume = volume
 end
 
 function STREAM:getVolume()
