@@ -91,7 +91,7 @@ function client.new(host, port, params)
 		commands = {},
 		start = socket.gettime(),
 		audio_streams = {},
-		audio_volume = 0.25,
+		audio_volume = 0.18,
 		audio_buffer = ffi.new('float[?]', FRAME_SIZE),
 	}
 	return setmetatable(meta, client)
@@ -166,7 +166,7 @@ function client:hookCall(name, ...)
 		local succ, ret = xpcall(callback, onError, self, ...)
 		if not succ then
 			log.error("%s error: %s", name, desc)
-		else
+		elseif ret then
 			return ret
 		end
 	end
@@ -272,8 +272,10 @@ function client:update()
 
 					if self.users[session].talking ~= talking then
 						self.users[session].talking = talking
-						if self.audio_streams[1] then
-							self.audio_streams[1]:setUserTalking(talking)
+						for i=1,2 do
+							if self.audio_streams[i] then
+								self.audio_streams[i]:setUserTalking(talking)
+							end
 						end
 					end
 

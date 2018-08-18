@@ -41,12 +41,12 @@ end
 
 function STREAM:setUserTalking(talking)
 	self.talking_count = self.talking_count + (talking and 1 or -1)
-	if self.talking_count >= 1 and not ducked then
-		ducked = true
+	if self.talking_count >= 1 and not self.ducked then
+		self.ducked = true
 		--self.duck_volume = 0.25
 		self:duckTo(0.25, 0.2)
 	else
-		ducked = false
+		self.ducked = false
 		self:duckTo(1, 1)
 	end
 end

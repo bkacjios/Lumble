@@ -334,7 +334,8 @@ local function match_objects(objects, old_module, map, globals)
 				local current = { table.unpack(item, 2) }
 				error ( "Ambiguity table : " .. table.concat(current, ",") )
 			end]]
-			map[obj] = old_one
+			--map[obj] = old_one
+			map[obj] = old_one or map[obj] or false
 			if print then print("MATCH", old_one, table.unpack(item,2)) end
 		end
 	end

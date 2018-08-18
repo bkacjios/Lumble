@@ -28,7 +28,7 @@ client:hook("OnServerSync", function(client, me)
 	--client:playOgg("lookingkindofdumb.ogg")
 end)
 
---lua.install(client)
+lua.install(client)
 afk.install(client)
 
 client:addCommand("summon", function(client, user, cmd, args, raw)
@@ -376,7 +376,7 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 	table.insert(rolled_initiatives, {name = name, roll = total, bonus = bonus})
 	table.sort(rolled_initiatives, function(a, b) return a.roll + a.bonus > b.roll + b.bonus end)
 
-	client:playOgg(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)), 2, 0.5)
+	client:playOgg(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)), 3, 0.5)
 
 	user:getChannel():message(message)
 end):setHelp("Roll for initiative"):setUsage("[clear, list]"):alias("init")
@@ -475,7 +475,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	else
 		local sound_num = math.min(num_rolls, 6)
 		local rand = math.random(1, 2)
-		client:playOgg(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, rand), 2, 0.5)
+		client:playOgg(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, rand), 3, 0.5)
 		user:getChannel():message(message)
 	end
 end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll"):alias("rtd"):alias("rol"):alias("rool"):alias("rrol"):alias("rroll"):alias("rl")
@@ -511,7 +511,7 @@ client:addCommand("flip", function(client, user, cmd, args, raw)
 	if cmd:sub(2) == "pflip" then
 		user:message(message)
 	else
-		client:playOgg(("audio/dnd/coin_flip-%d.ogg"):format(math.random(1,2)), 3, 0.5)
+		client:playOgg(("audio/dnd/coin_flip-%d.ogg"):format(math.random(1,2)), 4, 0.5)
 		user:getChannel():message(message)
 	end
 end):setHelp("Flip a coin"):setUsage("[#coins = 1]"):alias("pflip")
@@ -532,7 +532,7 @@ client:addCommand("rollstats", function(client, user, cmd, args)
 		table.insert(stats, stat)
 	end
 
-	client:playOgg(("audio/dnd/dice_roll_4-%d.ogg"):format(math.random(1, 2)), 2, 0.5)
+	client:playOgg(("audio/dnd/dice_roll_4-%d.ogg"):format(math.random(1, 2)), 3, 0.5)
 	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#3377ff\">%s</span></b>", user:getName(), table.concat(stats, ", "))
 end):setHelp("Rolls 4D6 and takes the highest 3 values, 6 times")
 
@@ -586,8 +586,8 @@ Created by <a href="https://github.com/Someguynamedpie">Somepotato</a> &amp; <a 
 end, "Get some information about LuaBot")
 
 client:addCommand("play", function(client, user, cmd, args, raw)
-	client:playOgg(("audio/%s.ogg"):format(args[1]), nil, nil, tonumber(args[2]))
-end):setHelp("Play an audio file"):setUsage("<file> [volume]")
+	client:playOgg(("audio/%s.ogg"):format(args[1]), tonumber(args[2]), tonumber(args[3]), tonumber(args[4]))
+end):setHelp("Play an audio file"):setUsage("<file> [channel] [volume] [count]")
 
 local restricted = {}
 
@@ -622,42 +622,43 @@ end)
 
 client:addCommand("volume", function(client, user, cmd, args, raw)
 	local volume = args[1]
+	local channel = args[2] and tonumber(args[2]) or 1
 	if volume then
 		volume = tonumber(volume)/100
 		if not user:isMaster() then volume = math.min(volume,1) end
-		client:setVolume(volume)
-		log.debug(("[COMMAND] %s: changed the volume to %i"):format(user:getName(), volume*100))
+		client:setVolume(volume, channel)
+		log.debug(("[COMMAND] %s: changed the volume of channel %i to %i"):format(user:getName(), channel, volume*100))
 	else
 		user:message(("Volume level: <b>%i</b>"):format(client:getVolume()*100))
 	end
-end):setHelp("Set the volume of any playing audio"):setUsage("<volume>")
+end):setHelp("Set the volume of any playing audio"):setUsage("<volume> [channel]")
 
 local playlist = {}
-local track = 0
+local track = { 0, 0 }
 
 local function playPlaylist(client, channel)
-	if channel ~= 1 then return end
+	if not playlist[channel] then return end
 
-	if track >= #playlist then
-		track = 0
+	if track[channel] >= #playlist[channel] then
+		track[channel] = 0
 	end
-	track = track + 1
+	track[channel] = track[channel] + 1
 
-	if playlist[track] then
-		client:playOgg(playlist[track])
+	if playlist[channel][track[channel]] then
+		client:playOgg(playlist[channel][track[channel]], channel)
 	end
 end
 
 client:hook("AudioStreamFinish", playPlaylist)
 
 client:addCommand("dnd", function(client, user, cmd, args, raw)
-	playlist = {}
+	playlist[1] = {}
 
-	local path = ("audio/dnd/%s/"):format(args[1])
+	local path = ("audio/dnd/music/%s/"):format(args[1])
 
 	if args[1] == "none" or args[1] == "silence" then
-		if client:isPlaying() then
-			client:getPlaying():fadeOut(5)
+		if client:isPlaying(1) then
+			client:getPlaying(1):fadeOut(5)
 		end
 		return
 	end	
@@ -665,35 +666,75 @@ client:addCommand("dnd", function(client, user, cmd, args, raw)
 	if lfs.attributes(path,"mode") ~= "directory" then
 		local moods = {}
 
-		for file in lfs.dir("audio/dnd") do
-			if lfs.attributes("audio/dnd/" .. file, "mode") == "directory" and file ~= "." and file ~= ".." then
+		for file in lfs.dir("audio/dnd/music") do
+			if lfs.attributes("audio/dnd/music/" .. file, "mode") == "directory" and file ~= "." and file ~= ".." then
 				table.insert(moods, file)
 			end
 		end
 
 		user:message("<i>Invalid mode</i>: %s<br/><b>Available Modes</b><br/>%s", args[1], table.concat(moods, "<br/>"))
-		user:message(file)
 		return
 	end
 
 	for file in lfs.dir(path) do
 		if file ~= "." and file ~= ".." and lfs.attributes(path .. file, "mode") == "file" and string.ExtensionFromFile(file) == "ogg" then
-			table.insert(playlist, path .. file)
+			table.insert(playlist[1], path .. file)
 		end
 	end
 
-	table.Shuffle(playlist)
+	table.Shuffle(playlist[1])
 
-	if client:isPlaying() then
-		client:getPlaying():fadeOut(5)
+	if client:isPlaying(1) then
+		client:getPlaying(1):fadeOut(5)
 	else
-		track = 0
+		track[1] = 0
 		playPlaylist(client, 1)
 	end
-end):setHelp("Set music for D&D"):setUsage("<mood>"):alias("mood")
+end):setHelp("Set music for D&D"):setUsage("<mood>"):alias("mood"):alias("music")
+
+client:addCommand("ambience", function(client, user, cmd, args, raw)
+	playlist[2] = {}
+
+	local path = ("audio/dnd/ambience/%s/"):format(args[1])
+
+	if args[1] == "none" or args[1] == "silence" then
+		if client:isPlaying(2) then
+			client:getPlaying(2):fadeOut(5)
+		end
+		return
+	end	
+
+	if lfs.attributes(path,"mode") ~= "directory" then
+		local moods = {}
+
+		for file in lfs.dir("audio/dnd/ambience") do
+			if lfs.attributes("audio/dnd/ambience/" .. file, "mode") == "directory" and file ~= "." and file ~= ".." then
+				table.insert(moods, file)
+			end
+		end
+
+		user:message("<i>Invalid mode</i>: %s<br/><b>Available Modes</b><br/>%s", args[1], table.concat(moods, "<br/>"))
+		return
+	end
+
+	for file in lfs.dir(path) do
+		if file ~= "." and file ~= ".." and lfs.attributes(path .. file, "mode") == "file" and string.ExtensionFromFile(file) == "ogg" then
+			table.insert(playlist[2], path .. file)
+		end
+	end
+
+	table.Shuffle(playlist[2])
+
+	if client:isPlaying(2) then
+		client:getPlaying(2):fadeOut(5)
+	else
+		track[2] = 0
+		playPlaylist(client, 2)
+	end
+end):setHelp("Set ambience for D&D"):setUsage("<mood>")
 
 client:addCommand("fade", function(client, user, cmd, args, raw)
-	client:getPlaying():fadeOut(tonumber(args[1]) or 5)
+	client:getPlaying(tonumber(args[2]) or 1):fadeOut(tonumber(args[1]) or 5)
 end):setHelp("Fade out the current audio")
 
 client:addCommand("afk", function(client, user, cmd, args, raw)
