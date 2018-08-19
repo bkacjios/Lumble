@@ -68,10 +68,8 @@ function STREAM:streamSamples(duration, sample_rate, channels)
 		sample_size = sample_size * sample_rate / source_rate
 		num_samples = math.ceil(sample_size * scale)
 
-		local volume = sample_size / original_size
-
 		for t=0,num_samples/2 do
-			self.rebuffer[t * 2] = self.buffer[math.floor(t / sample_rate * source_rate) * 2] * volume
+			self.rebuffer[t * 2] = self.buffer[math.floor(t / sample_rate * source_rate) * 2] * 2
 		end
 
 		-- Copy our new buffer into the original buffer
