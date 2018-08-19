@@ -24,19 +24,32 @@ local socket = require("socket")
 
 local stream = require("lumble.client.audiostream")
 
+local ocbaes128 = require("ocb.aes128")
+
 require("extensions.string")
 
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
 
-local FRAME_DURATION = 60 -- ms
+local FRAME_DURATION = 10 -- ms
 local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
 local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
 local PCM_LEN = PCM_SIZE / 2
 
+local UDP_CELT_ALPHA = 0
+local UDP_PING = 1
+local UDP_SPEEX = 2
+local UDP_CELT_BETA = 3
+local UDP_OPUS = 4
+
 function client.new(host, port, params)	
 	local tcp = socket.tcp()
 	tcp:settimeout(5)
+
+	local udp = socket.udp()
+	local status, err = udp:setpeername(host, port)
+	if not status then return false, err end
+	udp:settimeout(0)
 
 	local status, err = tcp:connect(host, port)
 	if not status then return false, err end
@@ -49,11 +62,13 @@ function client.new(host, port, params)
 
 	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 	encoder:set("vbr", 0)
-	encoder:set("bitrate", 40000)
+	encoder:set("bitrate", 41100)
 
 	local meta = {
+		crypt = ocbaes128.new(),
 		encoder = encoder,
 		tcp = tcp,
+		udp = udp,
 		host = host,
 		port = port,
 		params = params,
@@ -82,7 +97,7 @@ function client.new(host, port, params)
 			image_message_length = 0,
 			max_users = 0,
 		},
-		crypt = {
+		crypt_keys = {
 			key = {},
 			client_nonce = {},
 			server_nonce = {},
@@ -91,7 +106,7 @@ function client.new(host, port, params)
 		commands = {},
 		start = socket.gettime(),
 		audio_streams = {},
-		audio_volume = 0.18,
+		audio_volume = 0.15,
 		audio_buffer = ffi.new('float[?]', FRAME_SIZE),
 	}
 	return setmetatable(meta, client)
@@ -201,8 +216,14 @@ function client:auth(username, password, tokens)
 end
 
 function client:send(packet)
-	log.trace("Send %s to server", packet)
+	log.trace("Send TCP %s to server", packet)
 	return self.tcp:send(packet:toString())
+end
+
+function client:sendUDP(packet)
+	log.trace("Send UDP %s to server", packet)
+	local encryped = self.crypt:encrypt(packet:toString())
+	return self.udp:send(encryped)
 end
 
 function client:getTime()
@@ -219,13 +240,77 @@ end
 
 function client:pingUDP()
 	local b = buffer()
-	b:writeByte(0x20)
-	b:writeMumbleVarInt(self:getTime() * 1000)
+	b:writeByte(bit.lshift(UDP_PING, 5))
+	b:writeString("test")
+	self:sendUDP(b)
 end
 
 local next_ping = socket.gettime() + 5
 
 local record = io.open("data.vorbis", "wba")
+
+function client:receiveVoiceData(packet, codec, target)
+	local session = packet:readMumbleVarInt()
+	local sequence = packet:readMumbleVarInt()
+
+	local talking = false
+
+	if codec == UDP_SPEEX or codec == UDP_CELT_ALPHA or codec == UDP_CELT_BETA then
+		local header = packet:readByte()
+		talking = bit.band(header, 0x80) ~= 0x80
+	elseif codec == UDP_OPUS then 
+		local header = packet:readMumbleVarInt()
+
+		local len = bit.band(header, 0x1FFF)
+		talking = bit.band(header, 0x2000) ~= 0x2000
+
+		--[[local b = self:createAudioPacket(UDP_OPUS, target, sequence)
+
+		local all = packet:readAll()
+
+		b:writeMumbleVarInt(header)
+		b:write(all)
+
+		b:seek("set", 2)
+		b:writeInt(b.length - 6) -- Set size of payload
+
+		--record:write(all)
+
+		self.tcp:send(b:toString())]]
+	end
+
+	if self.users[session].talking ~= talking then
+		self.users[session].talking = talking
+		for i=1,2 do
+			if self.audio_streams[i] then
+				self.audio_streams[i]:setUserTalking(talking)
+			end
+		end
+	end
+end
+
+function client:readUDP()
+	local read = true
+	local err
+
+	while read do
+		read, err = self.udp:receive(100)
+		if read then
+			local b = buffer(read)
+
+			local id = b:readByte()
+			local stuff = b:readAll()
+
+			print(self.crypt:decrypt(stuff))
+
+		elseif err == "timeout" then
+			return true
+		else
+			log.error("UDP connection error %q", err)
+			return false, err
+		end
+	end
+end
 
 function client:update()
 	local now = socket.gettime()
@@ -235,6 +320,8 @@ function client:update()
 		self:pingTCP()
 		--self:pingUDP()
 	end
+
+	--self:readUDP()
 
 	local read = true
 	local err
@@ -257,42 +344,12 @@ function client:update()
 
 			if id == 1 then
 				local voice = buffer(read)
-
 				local header = voice:readByte()
 
 				local codec = bit.rshift(header, 5)
 				local target = bit.band(header, 31)
 
-				if codec == 4 then
-					local session = voice:readMumbleVarInt()
-					local sequence = voice:readMumbleVarInt()
-					local voice_header = voice:readMumbleVarInt()
-
-					local talking = bit.band(voice_header, 0x2000) ~= 0x2000
-
-					if self.users[session].talking ~= talking then
-						self.users[session].talking = talking
-						for i=1,2 do
-							if self.audio_streams[i] then
-								self.audio_streams[i]:setUserTalking(talking)
-							end
-						end
-					end
-
-					--[[local b = self:createAudioPacket(4, target, sequence)
-
-					local all = voice:readAll()
-
-					b:writeMumbleVarInt(voice_header)
-					b:write(all)
-
-					b:seek("set", 2)
-					b:writeInt(b.length - 6) -- Set size of payload
-
-					--record:write(all)
-
-					self.tcp:send(b:toString())]]
-				end
+				self:receiveVoiceData(voice, codec, target)
 			else
 				local packet = packet.new(id, read)
 				self:onPacket(packet)
@@ -304,7 +361,7 @@ function client:update()
 		elseif err == "timeout" then
 			return true
 		else
-			log.error("connection error %q", err)
+			log.error("TCP connection error %q", err)
 			self.tcp:close()
 			return false, err
 		end
@@ -322,11 +379,12 @@ function client:createAudioStream()
 	if self.audio_timer then return end
 
 	-- Get the length of our timer..
-	-- We send two packets at once so we double our frame duration
-	local count = 1
+	-- We have a 10ms frame delay, but we're going to send 6 every 6ms
+	local count = 4
 	local time = FRAME_DURATION * count / 1000
+
 	self.audio_timer = ev.Timer.new(function()
-		-- Send multiple audio packets at once if desired
+		-- Send our multiple audio packets at once
 		for i=1,count do
 			self:streamAudio()
 		end
@@ -334,11 +392,13 @@ function client:createAudioStream()
 	self.audio_timer:start(ev.Loop.default)
 end
 
-function client:createAudioPacket(mode, target, seq)
+function client:createAudioPacket(codec, target, seq)
 	local b = buffer()
 	b:writeShort(1) -- Type UDPTunnel
 	b:writeInt(0) -- Size of payload
-	local header = bor(lshift(mode, 5), target)
+
+	-- Start of voice datagram
+	local header = bor(lshift(codec, 5), target)
 	b:writeByte(header)
 	b:writeMumbleVarInt(seq)
 	return b
@@ -387,7 +447,7 @@ function client:streamAudio()
 		print("end of stream")
 	end]]
 
-	local b = self:createAudioPacket(4, 0, sequence)
+	local b = self:createAudioPacket(UDP_OPUS, 0, sequence)
 
 	b:writeMumbleVarInt(encoded_len)
 	b:write(ffi.string(encoded, encoded_len))
@@ -395,6 +455,7 @@ function client:streamAudio()
 	b:seek("set", 2)
 	b:writeInt(b.length - 6) -- Set size of payload
 
+	--self:sendUDP(b)
 	self.tcp:send(b:toString())
 
 	sequence = (sequence + 1) % 10000
@@ -570,8 +631,15 @@ end
 
 function client:onCryptSetup(packet)
 	for desc, value in packet:list() do
-		self.crypt[desc.name] = string.tohex(value)
+		self.crypt_keys[desc.name] = value
 	end
+
+	if packet.key and packet.client_nonce and packet.server_nonce then
+		self.crypt:setKey(packet.key, packet.client_nonce, packet.server_nonce)
+	elseif packet.server_nonce then
+		self.crypt:setDecryptIV(packet.server_nonce)
+	end
+	
 	self:hookCall("OnCryptSetup")
 end
 
