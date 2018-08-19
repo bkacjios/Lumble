@@ -33,8 +33,6 @@ local SAMPLE_RATE = 48000
 
 local FRAME_DURATION = 10 -- ms
 local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
-local PCM_SIZE = FRAME_SIZE * CHANNELS * 2
-local PCM_LEN = PCM_SIZE / 2
 
 local UDP_CELT_ALPHA = 0
 local UDP_PING = 1
@@ -418,16 +416,16 @@ function client:streamAudio()
 	ffi.fill(self.audio_buffer, ffi.sizeof(self.audio_buffer))
 
 	for channel, stream in pairs(self.audio_streams) do
-		local pcm, pcm_size = stream:streamSamples(FRAME_DURATION)
-		if pcm_size > biggest_pcm_size then
-			biggest_pcm_size = pcm_size
-		end
+		local pcm, pcm_size = stream:streamSamples(FRAME_DURATION, SAMPLE_RATE, CHANNELS)
 
-		if not pcm or pcm_size <= 0 then
+		if not pcm or not pcm_size or pcm_size <= 0 then
 			self.audio_streams[channel] = nil
 			self:hookCall("AudioStreamFinish", channel)
 		else
-			for i=0,FRAME_SIZE-1 do
+			if pcm_size > biggest_pcm_size then
+				biggest_pcm_size = pcm_size
+			end
+			for i=0,pcm_size-1 do
 				self.audio_buffer[i] = self.audio_buffer[i] + pcm[i]
 			end
 		end
@@ -437,6 +435,11 @@ function client:streamAudio()
 
 	local encoded, encoded_len = self.encoder:encode(self.audio_buffer, FRAME_SIZE, FRAME_SIZE, 0x1FFF)
 	if not encoded or encoded_len <= 0 then self:hookCall("AudioFinish") return end
+
+	if encoded_len > 8191 then
+		log.error("encoded frame too large for audio packet..", encoded_len)
+		return
+	end
 
 	if biggest_pcm_size < FRAME_SIZE then
 		-- Set 14th bit to 1 to signal end of stream

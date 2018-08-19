@@ -586,8 +586,8 @@ Created by <a href="https://github.com/Someguynamedpie">Somepotato</a> &amp; <a 
 end, "Get some information about LuaBot")
 
 client:addCommand("play", function(client, user, cmd, args, raw)
-	client:playOgg(("audio/%s.ogg"):format(args[1]), tonumber(args[2]), tonumber(args[3]), tonumber(args[4]))
-end):setHelp("Play an audio file"):setUsage("<file> [channel] [volume] [count]")
+	client:playOgg(("audio/%s.ogg"):format(args[1]), tonumber(args[2]), nil, tonumber(args[3]))
+end):setHelp("Play an audio file"):setUsage("<file> [channel] [count]")
 
 local restricted = {}
 
@@ -734,8 +734,8 @@ client:addCommand("ambience", function(client, user, cmd, args, raw)
 end):setHelp("Set ambience for D&D"):setUsage("<mood>")
 
 client:addCommand("fade", function(client, user, cmd, args, raw)
-	client:getPlaying(tonumber(args[2]) or 1):fadeOut(tonumber(args[1]) or 5)
-end):setHelp("Fade out the current audio")
+	client:getPlaying(tonumber(args[1]) or 1):fadeOut(tonumber(args[2]) or 5)
+end):setHelp("Fade out the current audio"):setUsage("[channel] [duration]")
 
 client:addCommand("afk", function(client, user, cmd, args, raw)
 	local root = client:getChannel():getName()

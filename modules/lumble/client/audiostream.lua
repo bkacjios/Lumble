@@ -3,6 +3,8 @@ local stb = require("lumble.vorbis")
 local socket = require("socket")
 
 local new = ffi.new
+local copy = ffi.copy
+local sizeof = ffi.sizeof
 
 local STREAM = {}
 STREAM.__index = STREAM
@@ -17,7 +19,8 @@ local function AudioStream(path, volume, count)
 		vorbis = vorbis,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
-		buffer = {},
+		buffer = new('float[?]', 1024),
+		rebuffer = new('float[?]', 1024),
 		volume = volume or 0.25,
 		loop_count = count or 0,
 		talking_count = 0,
@@ -51,21 +54,34 @@ function STREAM:setUserTalking(talking)
 	end
 end
 
-function STREAM:streamSamples(duration)
-	local frame_size = self.info.sample_rate * duration / 1000
+function STREAM:streamSamples(duration, sample_rate, channels)
+	local sample_size = self.info.sample_rate * duration / 1000
 
-	--[[if frame_size > 8191 then
-		log.warn("frame too large for audio packet..", frame_size)
-	end]]
+	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 1, self.buffer, sample_size)
+	local source_rate = self.info.sample_rate
 
-	self.buffer[frame_size] = self.buffer[frame_size] or new('float[?]', frame_size)
+	if source_rate ~= sample_rate then
+		-- Resample the audio
+		local scale = num_samples/sample_size
+		local original_size = sample_size
 
-	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 1, self.buffer[frame_size], frame_size)
+		sample_size = sample_size * sample_rate / source_rate
+		num_samples = math.ceil(sample_size * scale)
+
+		local volume = sample_size / original_size
+
+		for t=0,num_samples/2 do
+			self.rebuffer[t * 2] = self.buffer[math.floor(t / sample_rate * source_rate) * 2] * volume
+		end
+
+		-- Copy our new buffer into the original buffer
+		copy(self.buffer, self.rebuffer, sizeof(self.rebuffer))
+	end
 
 	local fade_percent = 1
 	local duck_percent = 1
 
-	if num_samples < frame_size and self.loop_count > 1 then
+	if num_samples < sample_size and self.loop_count > 1 then
 		self.loop_count = self.loop_count - 1
 		self:seek("start")
 	end
@@ -88,11 +104,11 @@ function STREAM:streamSamples(duration)
 			self.duck_volume = self.duck_to_volume + (self.duck_from_volume - self.duck_to_volume) * duck_percent
 		end
 
-		self.buffer[frame_size][i] = self.buffer[frame_size][i] * self.volume * self.fade_volume * self.duck_volume
+		self.buffer[i] = self.buffer[i] * self.volume * self.fade_volume * self.duck_volume
 		-- * 0.5 * (1+math.sin(2 * math.pi * 0.1 * socket.gettime()))
 	end
 
-	return self.buffer[frame_size], num_samples
+	return self.buffer, num_samples
 end
 
 function STREAM:setVolume(volume)
