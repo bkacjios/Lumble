@@ -115,6 +115,7 @@ concommand.Alias("exit", "quti")
 
 function concommand.loop()
 	local msg = io.read()
+	if not msg then return end
 	local args = string.parseArgs(msg)
 	local cmd = table.remove(args,1)
 	if not cmd then return end

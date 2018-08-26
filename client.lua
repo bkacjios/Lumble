@@ -1,3 +1,7 @@
+local lfs = require("lfs")
+
+lfs.chdir(arg[0]:match("^(.*[/\\])[^/\\]-$"))
+
 package.path = package.path .. ';./modules/?.lua;./modules/?/init.lua'
 
 --require'log'.level = 'trace'

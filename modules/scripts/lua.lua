@@ -116,7 +116,7 @@ function lua.run(client, event)
 	local user = event.actor
 
 	-- Ignore chat messages to the entire channel
-	if event.channels then return end
+	if event.channels or str:sub(1,1) == "#" then return end
 
 	local lua, err = loadstring(str)
 

@@ -28,6 +28,31 @@ client:hook("OnServerSync", function(client, me)
 	--client:playOgg("lookingkindofdumb.ogg")
 end)
 
+client:hook("OnTextMessage", "soundboard", function(client, event)
+	local message = event.message
+	local user = event.actor
+
+	if message:sub(1,1) == "#" then
+		local path = ("audio/soundboard/%s"):format(message:sub(2))
+		local file = ("%s.ogg"):format(path)
+
+		if lfs.attributes(path,"mode") == "directory" then
+			local sounds = {}
+			for file in lfs.dir(path) do
+				if file ~= "." and file ~= ".." then
+					table.insert(sounds, file)
+				end
+			end
+			file = ("%s/%s"):format(path, sounds[math.random(1,#sounds)])
+		end
+		if lfs.attributes(file,"mode") == "file" then
+			log.debug("%s played: #%s", user, message:sub(2))
+			client:playOgg(file, user.session + 10)
+			return true
+		end
+	end
+end)
+
 lua.install(client)
 afk.install(client)
 
@@ -577,11 +602,11 @@ client:addCommand("source", function(client, user, cmd, args, raw)
 		local fixed = source:gsub("%%", "%%%%"):escapeHTML():gsub("\r", "<br/>"):gsub("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
 		user:message("<p>" .. fixed .. "</p>")
 	end
-end):setHelp("See the source code of a command"):setUsage("<command name>")
+end):setHelp("See the source code of a command"):setUsage("<command name>"):alias("src")
 
 client:addCommand("about", function(client, user, cmd, args, raw)
-	local message = [[<b>LuaBot</b>
-Created by <a href="https://github.com/Someguynamedpie">Somepotato</a> &amp; <a href="https://github.com/bkacjios">Bkacjios</a><br/><br/>
+	local message = [[<p><b>Lumble</b>
+Created by <a href="https://github.com/bkacjios">Bkacjios</a> &amp; <a href="https://github.com/Someguynamedpie">Somepotato</a><br/>
 <a href="https://github.com/bkacjios/Lumble">https://github.com/bkacjios/Lumble</a>]]
 	user:message(message)
 end, "Get some information about LuaBot")
