@@ -123,10 +123,10 @@ function concommand.loop()
 	if info then
 		local suc, err = pcall(info.callback, cmd, args, msg)
 		if not suc then
-			log.error("%s (%q)", msg, err)
+			log.error("%q (%s)", msg, err)
 		end
 	else
-		print(("Unknown command: %s"):format(cmd))
+		print(("Unknown command: %q"):format(cmd))
 	end
 end
 
