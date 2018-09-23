@@ -82,6 +82,7 @@ function client.new(host, port, params)
 			tcp_ping_avg = 0,
 			tcp_ping_var = 0,
 		},
+		pings_tcp = 0,
 		version = {},
 		channels = {},
 		users = {},
@@ -234,6 +235,7 @@ function client:pingTCP()
 	ping:set("tcp_packets", self.ping.tcp_packets)
 	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
 	self:send(ping)
+	self.pings_tcp = self.pings_tcp + 1
 end
 
 function client:pingUDP()
@@ -243,13 +245,13 @@ function client:pingUDP()
 	self:sendUDP(b)
 end
 
-local next_ping = socket.gettime() + 5
-
 local record = io.open("data.vorbis", "wba")
 
 function client:receiveVoiceData(packet, codec, target)
 	local session = packet:readMumbleVarInt()
 	local sequence = packet:readMumbleVarInt()
+
+	local user = self.users[session]
 
 	local talking = false
 
@@ -261,6 +263,8 @@ function client:receiveVoiceData(packet, codec, target)
 
 		local len = bit.band(header, 0x1FFF)
 		talking = bit.band(header, 0x2000) ~= 0x2000
+
+		--record:write(packet:toString())
 
 		--[[local b = self:createAudioPacket(UDP_OPUS, target, sequence)
 
@@ -277,8 +281,8 @@ function client:receiveVoiceData(packet, codec, target)
 		self.tcp:send(b:toString())]]
 	end
 
-	if self.users[session].talking ~= talking then
-		self.users[session].talking = talking
+	if user.talking ~= talking then
+		user.talking = talking
 		for i=1,2 do
 			if self.audio_streams[i] then
 				self.audio_streams[i]:setUserTalking(talking)
@@ -313,10 +317,14 @@ end
 function client:update()
 	local now = socket.gettime()
 
-	if not next_ping or next_ping <= now then
-		next_ping = now + 5
+	if self.synced and (not self.next_ping or self.next_ping <= now) then
+		self.next_ping = now + 5
 		self:pingTCP()
 		--self:pingUDP()
+	end
+
+	if (self.pings_tcp > 5) then
+		return false, "No response from server.."
 	end
 
 	--self:readUDP()
@@ -377,15 +385,10 @@ function client:createAudioStream()
 	if self.audio_timer then return end
 
 	-- Get the length of our timer..
-	-- We have a 10ms frame delay, but we're going to send 6 every 6ms
-	local count = 4
-	local time = FRAME_DURATION * count / 1000
+	local time = FRAME_DURATION / 1000
 
 	self.audio_timer = ev.Timer.new(function()
-		-- Send our multiple audio packets at once
-		for i=1,count do
-			self:streamAudio()
-		end
+		self:streamAudio()
 	end, time, time)
 	self.audio_timer:start(ev.Loop.default)
 end
@@ -498,6 +501,7 @@ function client:onPing(packet)
 	local ms = (time - packet.timestamp)
 	self.ping.tcp_packets = self.ping.tcp_packets + 1
 	self.ping.tcp_ping_avg = ms
+	self.pings_tcp = self.pings_tcp - 1
 	log.trace("ping: %0.2f", ms)
 	self:hookCall("OnPing")
 end

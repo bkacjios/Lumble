@@ -5,6 +5,8 @@ local packet = require("lumble.packet")
 local util = require("util")
 local config = require("config")
 
+local buffer = require("buffer")
+
 function user.new(client, packet)
 	local user = setmetatable({
 		client = client,
@@ -24,8 +26,36 @@ end
 
 function user:updateStats(packet)
 	for desc, value in packet:list() do
-		self.stats[desc.name] = value
+		if desc.name == "address" then
+			local b = buffer(value)
+
+			self.stats[desc.name] = self.stats[desc.name] or {}
+			self.stats[desc.name].data = value
+
+			if b:readInt() == 0 and b:readInt() == 0 and b:readShort() == 0 then
+				-- ipv4
+				self.stats[desc.name].ipv6 = false
+				self.stats[desc.name].ipv4 = true
+				self.stats[desc.name].string = ("%d.%d.%d.%d"):format(b[13], b[14], b[15], b[16])
+			else
+				-- ipv6
+				self.stats[desc.name].ipv6 = true
+				self.stats[desc.name].ipv4 = false
+				self.stats[desc.name].string = ("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x"):format(
+					b[1], b[2], b[3], b[4],
+					b[5], b[6], b[7], b[8],
+					b[9], b[10], b[11], b[12],
+					b[13], b[14], b[15], b[16]
+				)
+			end
+		else
+			self.stats[desc.name] = value
+		end
 	end
+end
+
+function user:getAddress()
+	return self.stats["address"].string
 end
 
 function user:getClient()
@@ -81,7 +111,7 @@ function user:move(channel)
 	local msg = packet.new("UserState")
 	msg:set("session", self.session)
 	if type(channel) == "string" then
-		msg:set("channel_id", self.client:getChannel(channel):getID())
+		msg:set("channel_id", self:getChannel(channel):getID())
 	else
 		msg:set("channel_id", channel:getID())
 	end

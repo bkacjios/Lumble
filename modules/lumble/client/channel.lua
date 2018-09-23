@@ -96,9 +96,14 @@ function channel:send(packet)
 end
 
 function channel:message(text, ...)
+	text = text or ""
+	text = text:format(...)
+	if #text > self.client.config.message_length then
+		text = string.ellipse(text, self.client.config.message_length)
+	end
 	local msg = packet.new("TextMessage")
 	msg:add("channel_id", self.channel_id)
-	msg:set("message", text:format(...))
+	msg:set("message", text)
 	self:send(msg)
 end
 

@@ -186,7 +186,6 @@ function BUFFER:read(...)
 	local returns = {}
 
 	for n,arg in pairs(args) do
-		local buffer = {}
 		if type(arg) == "string" then
 			if arg:sub(1,2) == "*a" then
 				insert(returns, self:readAll())

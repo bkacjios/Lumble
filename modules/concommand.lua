@@ -60,11 +60,11 @@ concommand.Add("status", function(cmd, args)
 			local users = client:getUsers()
 			local longest = longestName(users)
 
-			print(("# %2s %7s %-".. #longest .."s %-29s %s"):format("id", "session", "name", "channel", "online"))
+			print(("# %2s %3s %-".. #longest .."s %-16s %-18s %-11s %s"):format("id", "ses", "name", "ip", "channel", "online", "idle"))
 			for k, user in UserPairs(users) do
 				local channel = user:getChannel()
-				local channel_format = ("%-3d[%-24s]"):format(channel:getID(), channel:getName():ellipse(24))
-				print(("# %2s %7s %-".. #longest .."s %-29s %s"):format(user:getID(), user:getSession(), user:getName(), channel_format, math.SecondsToHuman(user:getStat("onlinesecs"))))
+				local channel_format = ("%-3d[%-13s]"):format(channel:getID(), channel:getName():ellipse(13))
+				print(("# %2s %3s %-".. #longest .."s %-16s %-18s %-11s %s"):format(user:getID(), user:getSession(), user:getName(), user:getAddress(), channel_format, math.SecondsToHuman(user:getStat("onlinesecs"), 1), math.SecondsToHuman(user:getStat("idlesecs"), 1)))
 			end
 		end
 	end
@@ -102,7 +102,7 @@ end, "Disconnect from the server")
 concommand.Add("say", function(cmd, args, raw)
 	for host, clients in pairs(mumble.clients) do
 		for port, client in pairs(clients) do
-			client:getChannel("./An Absolute Classic"):message(raw:sub(4))
+			client.me:getChannel():message(raw:sub(4))
 		end
 	end
 end, "Say a thing")

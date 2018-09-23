@@ -25,7 +25,7 @@ client:hook("OnServerSync", function(client, me)
 	me:move(channel)]]
 	--me:setRecording(true)
 	--me:setPrioritySpeaker(true)
-	--client:playOgg("lookingkindofdumb.ogg")
+	--client:playOgg("audio/melee.ogg")
 end)
 
 client:hook("OnTextMessage", "soundboard", function(client, event)
@@ -47,7 +47,7 @@ client:hook("OnTextMessage", "soundboard", function(client, event)
 		end
 		if lfs.attributes(file,"mode") == "file" then
 			log.debug("%s played: #%s", user, message:sub(2))
-			client:playOgg(file, user.session + 10)
+			client:playOgg(file, user.session + 10, 1)
 			return true
 		end
 	end
@@ -306,12 +306,11 @@ client:addCommand("stand", function(client, user, cmd, args, raw)
 
 	blackjack_playing[username] = nil
 	user:getChannel():message(message)
-end):setHelp("Stand in a game of blackjack"):alias("stay")
+end):setHelp("Stand in a game of blackjack"):alias("stay"):alias("hold")
 
 client:addCommand("blackjack", function(client, user, cmd, args, raw)
 	local username = user:getName()
 	local name = name_convert[username] or username
-
 	if blackjack_playing[username] then
 		local message = "<p><b><span style=\"color:#aa0000\">Error</span></b>: You're already playing a game of <i>!blackjack</i>,  please <b>!hit</b> or <b>!stay</b>"
 		log.info(message:stripHTML())
