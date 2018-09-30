@@ -78,6 +78,20 @@ function user:setPrioritySpeaker(bool)
 	self:send(msg)
 end
 
+function user:setSelfMuted(bool)
+	if self.client.me ~= self then return end
+	local msg = packet.new("UserState")
+	msg:set("self_mute", bool and true or false)
+	self:send(msg)
+end
+
+function user:setSelfDeafened(bool)
+	if self.client.me ~= self then return end
+	local msg = packet.new("UserState")
+	msg:set("self_deaf", bool and true or false)
+	self:send(msg)
+end
+
 function user:message(text, ...)
 	text = text or ""
 	text = text:format(...)

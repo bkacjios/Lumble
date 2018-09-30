@@ -105,6 +105,7 @@ local function sandbox(user, func)
 			user:message(table.concat(txts, ", "))
 		end,
 		me = user,
+		bot = user:getClient().me,
 		client = user:getClient(),
 		users = user:getClient():getUsers(),
 		channel = user:getChannel(),

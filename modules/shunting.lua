@@ -10,6 +10,17 @@ function math.factorial(n)
 	return n
 end
 
+function math.average(...)
+	local nums = {...}
+	local sum = 0
+
+	for i=1, #nums do
+		sum = sum + nums[i]
+	end
+
+	return sum / #nums
+end
+
 local operators = {
 	[">"] = {
 		precedence = 6,
@@ -174,6 +185,7 @@ local functions = {
 	["asin"] = {method = math.asin},
 	["atan"] = {method = math.atan},
 	["atan2"] = {multi = true, method = math.atan2},
+	["avg"] = {multi = true, method = math.average},
 	["ceil"] = {multi = true, method = math.ceil},
 	["cos"] = {method = math.cos},
 	["cosh"] = {method = math.cosh},
