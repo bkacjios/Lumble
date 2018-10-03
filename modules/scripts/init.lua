@@ -20,6 +20,25 @@ local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
 if not client then return end
 client:auth("LuaBot", "", {"dnd"})
 
+client:hook("OnUserConnected", "check tardiness", function(client, event)
+	--[[local now = os.date('*t',t1)
+	local dndTime = os.time{year=now.year, month=now.month, day=1, hour=0, sec=1}]]
+
+	local day = tonumber(os.date("%w"))
+	local hour = tonumber(os.date("%H"))
+	local minute = tonumber(os.date("%M"))
+
+	if day == 2 then
+		if hour >= 18 and hour <= 19 then
+			if hour == 18 then
+				client.me:getChannel():message("%s is %d minutes early for DND", event.user:getName(), 59-minute)
+			elseif hour == 19 and minute > 0 then
+				client.me:getChannel():message("%s is %d minutes late for DND", event.user:getName(), minute)
+			end
+		end
+	end
+end)
+
 client:hook("OnServerSync", function(client, me)
 	--[[local channel = client:getChannel("DongerBots Chamber of sentience learning")
 	me:move(channel)]]
@@ -871,11 +890,9 @@ client:hook("OnTextMessage", "Thumbnails", function(client, event)
 
 	if youtube then
 		user:getChannel():message(formatYoutube(youtube))
-	end
-	if twitchclip then
+	elseif twitchclip then
 		user:getChannel():message(formatTwitchClip(twitch))
-	end
-	if twitch then
+	elseif twitch then
 		user:getChannel():message(formatTwitch(twitch))
 	end
 	--[[if other then

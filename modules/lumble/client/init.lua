@@ -560,12 +560,12 @@ end
 function client:onUserState(packet)
 	if not self.users[packet.session] then
 		local user = user.new(self, packet)
+		self.users[packet.session] = user
 		if self.synced then
 			log.info("%s connected", user)
 			self:hookCall("OnUserConnected", event.new(self, packet.proto))
 		end
 		user:requestStats()
-		self.users[packet.session] = user
 	else
 		local user = self.users[packet.session]
 		for desc, value in packet:list() do
@@ -712,13 +712,13 @@ function client:getUsers()
 	return self.users
 end
 
-function client:getUser(index)
-	local tp = type(index)
+function client:getUser(session)
+	local tp = type(session)
 	if tp == "number" then
-		return self.users[index]
+		return self.users[session]
 	elseif tp == "string" then
 		for session, user in pairs(self.users) do
-			if user:getName() == index then
+			if user:getName() == session then
 				return user
 			end
 		end
