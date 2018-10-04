@@ -761,7 +761,7 @@ local function getDuration(stamp)
 	local minutes = string.match(stamp, "(%d+)M") or 0
 	local seconds = string.match(stamp, "(%d+)S") or 0
 
-	if hours > 0 then
+	if tonumber(hours) > 0 then
 		return string.format("%02d:%02d:%02d", hours, minutes, seconds)
 	else
 		return string.format("%02d:%02d", minutes, seconds)
