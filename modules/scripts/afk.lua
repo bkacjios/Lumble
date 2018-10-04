@@ -10,7 +10,6 @@ function afk.checkStats(client, event)
 	local user = event.user
 
 	if user == client.me then return end
-	if user:getName() == "AIArena" then return end
 
 	local root = client:getChannel():getName()
 

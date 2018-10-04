@@ -549,23 +549,21 @@ function client:onUserRemove(packet)
 	if user and actor then
 		local reason = (packet.reason and packet.reason ~= "") and packet.reason or "No reason given"
 		message = (packet.ban and "banned by %s (%q)" or "kicked by %s (%q)"):format(actor, reason)
-	else
-		self.users[packet.session] = nil
 	end
-
 	log[user == self.me and "warn" or "info"]("%s %s", user, message)
 	self:hookCall("OnUserRemove", event.new(self, packet.proto, true))
+	self.users[packet.session] = nil
 end
 
 function client:onUserState(packet)
 	if not self.users[packet.session] then
 		local user = user.new(self, packet)
 		self.users[packet.session] = user
+		user:requestStats()
 		if self.synced then
 			log.info("%s connected", user)
 			self:hookCall("OnUserConnected", event.new(self, packet.proto))
 		end
-		user:requestStats()
 	else
 		local user = self.users[packet.session]
 		for desc, value in packet:list() do
@@ -727,6 +725,10 @@ end
 
 function client:getChannels()
 	return self.channels
+end
+
+function client:getChannelRoot()
+	return self.channels[0]
 end
 
 function client:getChannel(index)
