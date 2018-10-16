@@ -15,7 +15,8 @@ local params = {
 }
 
 --local client = mumble.getClient("198.27.70.16", 7331, params)
-local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
+--local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
+local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
 
 if not client then return end
 client:auth("LuaBot", "", {"dnd"})
@@ -753,7 +754,7 @@ client:addCommand("afk", function(client, user, cmd, args, raw)
 	user:move(afkchannel)
 end):setHelp("Make the bot move you to the AFK channel")
 
-local json = require("dkjson")
+local json = require("json")
 local https = require("ssl.https")
 
 local function getDuration(stamp)
@@ -793,20 +794,20 @@ local function formatTwitchClip(id)
 
 	if not items then return "Private or invalid Twitch.tv Clip." end
 
-	return ([[
+	return [[
 <center><table>
-	<tr>
-		<td align="center" valign="middle">
-			<h3>%s</h3>
-		</td>
-	</tr>
 	<tr>
 		<td align="center">
 			<a href="%s"><img src="%s" width="250" /></a>
 		</td>
 	</tr>
+	<tr>
+		<td align="center" valign="middle">
+			<h4>%s</h4>
+		</td>
+	</tr>
 </table></center>
-]]):format(items.title, items.url, items.thumbnail_url):gsub("%%", "%%%%")
+]], items.url, items.thumbnail_url, items.title
 end
 
 local function formatTwitch(id)
@@ -817,25 +818,28 @@ local function formatTwitch(id)
 	local js = json.decode(req)
 
 	local stream = js.stream
+	
+	table.foreach(stream.channel, print)
 
 	if not stream then return "Invalid twitch.tv stream." end
 
-	table.foreach(stream, print)
-
-	return ([[
-<center><table>
+	return [[
+<table>
 	<tr>
-		<td align="center" valign="middle">
-			<h3>%s</h3>
-		</td>
+		<th align="center" colspan="2"><a href="%s"><img src="%s" width="250" /></a></th>
 	</tr>
 	<tr>
-		<td align="center">
-			<a href="%s"><img src="%s" width="250" /></a>
+		<td><img src="%s" width="56"/></td>
+		<td>
+			<table>
+				<tr><td><h4>%s</h4></td></tr>
+				<tr><td>%s</td></tr>
+				<tr><td>%d viewers</td></tr>
+			</table>
 		</td>
 	</tr>
-</table></center>
-]]):format(stream.channel.status, stream.channel.url, stream.preview.medium):gsub("%%", "%%%%")
+</table>
+]], stream.channel.url, stream.preview.medium, stream.channel.logo, stream.channel.status, stream.channel.display_name, stream.viewers
 end
 
 local function formatYoutube(id)
@@ -849,20 +853,16 @@ local function formatYoutube(id)
 
 	if not items then return "Private or invalid YouTube video." end
 
-	return ([[
-<center><table>
+	return [[
+<table>
 	<tr>
-		<td align="center" valign="middle">
-			<h3>%s (%s)</h3>
-		</td>
+		<td align="center"><a href="http://youtu.be/%s"><img src="%s" width="250" /></a></td>
 	</tr>
 	<tr>
-		<td align="center">
-			<a href="http://youtu.be/%s"><img src="%s" width="250" /></a>
-		</td>
+		<td align="center" valign="middle"><h4>%s (%s)</h4></td>
 	</tr>
-</table></center>
-]]):format(items.snippet.title, getDuration(items.contentDetails.duration), id, items.snippet.thumbnails.medium.url)
+</table>
+]], id, items.snippet.thumbnails.medium.url, items.snippet.title, getDuration(items.contentDetails.duration)
 end
 
 local function formatOther(url)

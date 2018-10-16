@@ -129,7 +129,7 @@ function lua.run(client, event)
 	else
 		sandbox(user, lua)
 
-		local quota = 50000
+		local quota = 5000
 
 		local timeout = function()
 			error("instructions exceeded", 2)

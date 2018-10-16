@@ -55,7 +55,7 @@ function user:updateStats(packet)
 end
 
 function user:getAddress()
-	return self.stats["address"].string
+	return self.stats["address"] and self.stats["address"].string or "unknown"
 end
 
 function user:getClient()
@@ -219,8 +219,8 @@ function user:getStats()
 	return self.stats
 end
 
-function user:getStat(stat)
-	return self.stats[stat]
+function user:getStat(stat, default)
+	return self.stats[stat] or default
 end
 
 function user:isMaster()

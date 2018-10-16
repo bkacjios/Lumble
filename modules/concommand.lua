@@ -64,7 +64,7 @@ concommand.Add("status", function(cmd, args)
 			for k, user in UserPairs(users) do
 				local channel = user:getChannel()
 				local channel_format = ("%-3d[%-13s]"):format(channel:getID(), channel:getName():ellipse(13))
-				print(("# %2s %3s %-".. #longest .."s %-16s %-18s %-11s %s"):format(user:getID(), user:getSession(), user:getName(), user:getAddress(), channel_format, math.SecondsToHuman(user:getStat("onlinesecs"), 1), math.SecondsToHuman(user:getStat("idlesecs"), 1)))
+				print(("# %2s %3s %-".. #longest .."s %-16s %-18s %-11s %s"):format(user:getID(), user:getSession(), user:getName(), user:getAddress(), channel_format, math.SecondsToHuman(user:getStat("onlinesecs", 0), 1), math.SecondsToHuman(user:getStat("idlesecs", 0), 1)))
 			end
 		end
 	end

@@ -51,7 +51,7 @@ function client.new(host, port, params)
 
 	local status, err = tcp:connect(host, port)
 	if not status then return false, err end
-	tcp = ssl.wrap(tcp, params)
+	tcp, err = ssl.wrap(tcp, params)
 	if not tcp then return false, err end
 
 	status, err = tcp:dohandshake()
