@@ -24,7 +24,7 @@ local socket = require("socket")
 
 local stream = require("lumble.client.audiostream")
 
-local ocbaes128 = require("ocb.aes128")
+--local ocbaes128 = require("ocb.aes128")
 
 require("extensions.string")
 
@@ -63,7 +63,7 @@ function client.new(host, port, params)
 	encoder:set("bitrate", 41100)
 
 	local meta = {
-		crypt = ocbaes128.new(),
+		--crypt = ocbaes128.new(),
 		encoder = encoder,
 		tcp = tcp,
 		udp = udp,
@@ -86,6 +86,7 @@ function client.new(host, port, params)
 		version = {},
 		channels = {},
 		users = {},
+		num_users = 0,
 		permissions = {},
 		synced = false,
 		config = {
@@ -169,15 +170,11 @@ function client:hook(name, desc, callback)
 	self.hooks[name][desc] = callback
 end
 
-local function onError(err)
-	print(debug.traceback(err, 4))
-end
-
 function client:hookCall(name, ...)
 	log.trace("Call hook %q", name)
 	if not self.hooks[name] then return end
 	for desc, callback in pairs(self.hooks[name]) do
-		local succ, ret = xpcall(callback, onError, self, ...)
+		local succ, ret = xpcall(callback, debug.traceback, self, ...)
 		if not succ then
 			log.error("%s error: %s", name, desc)
 		elseif ret then
@@ -517,6 +514,7 @@ function client:onServerSync(packet)
 	self.session = packet.session
 	self.config.max_bandwidth = packet.max_bandwidth
 	self.me = self.users[self.session]
+	self.num_users = self.num_users + 1
 	log.info("message: %s", packet.welcome_text:stripHTML())
 	self:createAudioStream()
 	self:hookCall("OnServerSync", self.me)
@@ -543,22 +541,26 @@ end
 function client:onUserRemove(packet)
 	local user = packet.session and self.users[packet.session]
 	local actor = packet.actor and self.users[packet.actor]
+	local event = event.new(self, packet.proto, true)
 
 	local message = "disconnected"
 	
 	if user and actor then
-		local reason = (packet.reason and packet.reason ~= "") and packet.reason or "No reason given"
-		message = (packet.ban and "banned by %s (%q)" or "kicked by %s (%q)"):format(actor, reason)
+		local reason = (event.reason and event.reason ~= "") and event.reason or "No reason given"
+		message = (event.ban and "banned by %s (Reason %q)" or "kicked by %s (Reason %q)"):format(actor, reason)
+	else
+		self.users[packet.session] = nil
+		self.num_users = self.num_users - 1
 	end
 	log[user == self.me and "warn" or "info"]("%s %s", user, message)
-	self:hookCall("OnUserRemove", event.new(self, packet.proto, true))
-	self.users[packet.session] = nil
+	self:hookCall("OnUserRemove", event)
 end
 
 function client:onUserState(packet)
 	if not self.users[packet.session] then
 		local user = user.new(self, packet)
 		self.users[packet.session] = user
+		self.num_users = self.num_users + 1
 		user:requestStats()
 		if self.synced then
 			log.info("%s connected", user)
@@ -578,6 +580,7 @@ function client:onUserState(packet)
 			end
 		end
 	end
+
 	self:hookCall("OnUserState", event.new(self, packet.proto))
 end
 
@@ -639,11 +642,11 @@ function client:onCryptSetup(packet)
 		self.crypt_keys[desc.name] = value
 	end
 
-	if packet.key and packet.client_nonce and packet.server_nonce then
+	--[[if packet.key and packet.client_nonce and packet.server_nonce then
 		self.crypt:setKey(packet.key, packet.client_nonce, packet.server_nonce)
 	elseif packet.server_nonce then
 		self.crypt:setDecryptIV(packet.server_nonce)
-	end
+	end]]
 	
 	self:hookCall("OnCryptSetup")
 end
@@ -707,7 +710,7 @@ function client:getHooks()
 end
 
 function client:getUsers()
-	return self.users
+	return self.users, self.num_users
 end
 
 function client:getUser(session)

@@ -15,15 +15,15 @@ local params = {
 }
 
 --local client = mumble.getClient("198.27.70.16", 7331, params)
+--local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
 --local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
-local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
+local client = mumble.getClient("server.bitassemble.com", 64738, params)
 
-if not client then return end
-client:auth("LuaBot", "", {"dnd"})
+if not client then return end 
+client:auth("LuaBot", "dix", {"dnd", "hedoesntevenknow", })
 
-client:hook("OnUserConnected", "check tardiness", function(client, event)
-	--[[local now = os.date('*t',t1)
-	local dndTime = os.time{year=now.year, month=now.month, day=1, hour=0, sec=1}]]
+--[[client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
+	if event.channel ~= client.me:getChannel() then return end
 
 	local day = tonumber(os.date("%w"))
 	local hour = tonumber(os.date("%H"))
@@ -31,11 +31,52 @@ client:hook("OnUserConnected", "check tardiness", function(client, event)
 
 	if day == 2 then
 		if hour >= 18 and hour <= 19 then
-			if hour == 18 then
+			if hour == 18 and 59-minute > 0 then
 				client.me:getChannel():message("%s is %d minutes early for DND", event.user:getName(), 59-minute)
 			elseif hour == 19 and minute > 0 then
 				client.me:getChannel():message("%s is %d minutes late for DND", event.user:getName(), minute)
 			end
+		end
+	end
+end)]]
+
+local function findMostPopularChannel()
+	local party = client.me:getChannel()
+
+	local root = client:getChannel():getName()
+	local afkchannel = client:getChannel(config.afk.channel[root] or "AFK")
+
+	if not afkchannel then return end
+
+	local partyusers, num_party = party:getUsers()
+	if party == client.me:getChannel() then
+		num_party = num_party - 1
+	end
+
+	for id, channel in pairs(table.ShuffleCopy(client:getChannels())) do
+		local users, num_users = channel:getUsers()
+
+		if channel == client.me:getChannel() then
+			num_users = num_users - 1
+		end
+
+		if num_users > num_party and channel ~= client.me:getChannel() and channel ~= afkchannel then
+			party = channel
+		end
+	end
+
+	return party
+end
+
+client:hook("OnUserState", "Alone Checker", function(event)
+	if not client:isSynced() then return end
+
+	local users, num_users = client.me:getChannel():getUsers()
+
+	if num_users <= 1 then
+		local party = findMostPopularChannel()
+		if party then
+			client.me:move(party)
 		end
 	end
 end)
@@ -67,7 +108,7 @@ client:hook("OnTextMessage", "soundboard", function(client, event)
 		end
 		if lfs.attributes(file,"mode") == "file" then
 			log.debug("%s played: #%s", user, message:sub(2))
-			client:playOgg(file, user.session + 10, 1)
+			client:playOgg(file, user.session + 10, 0.15)
 			return true
 		end
 	end
@@ -100,11 +141,11 @@ client:addCommand("math", function(client, user, cmd, args, raw)
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
 
 local name_convert = {
-	["Amer"] = "Sancho",
+	--[[["Amer"] = "Sancho",
 	["Atsu"] = "Drak",
 	["Bkacjios"] = "Bhord",
 	["Paste"] = "Ranger Rick",
-	["Will"] = "Hrangus",
+	["Will"] = "Hrangus",]]
 }
 
 local card_suites = {
@@ -612,6 +653,10 @@ client:addCommand("help", function(client, user, cmd, args, raw)
 	user:message(message .. "</table>")
 end):setHelp("List all commands"):alias("commands"):alias("?")
 
+client:addCommand("kickme", function(client, user, cmd, args, raw)
+	user:kick(args[1] or "Bye bye!")
+end):setHelp("Kick yourself from the server"):setUsage("[reason]")
+
 client:addCommand("source", function(client, user, cmd, args, raw)
 	local command = client:getCommand(args[1])
 	if command then
@@ -818,8 +863,6 @@ local function formatTwitch(id)
 	local js = json.decode(req)
 
 	local stream = js.stream
-	
-	table.foreach(stream.channel, print)
 
 	if not stream then return "Invalid twitch.tv stream." end
 

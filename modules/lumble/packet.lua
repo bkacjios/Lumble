@@ -3,7 +3,6 @@ packet.__index = packet
 
 local proto = require("lumble.proto")
 local buffer = require("buffer")
-local log = require("log")
 
 function packet.new(id, data)
 	local packet = setmetatable({}, packet)

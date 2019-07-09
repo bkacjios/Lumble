@@ -6,11 +6,13 @@ local util = require("util")
 local config = require("config")
 
 local buffer = require("buffer")
+local log = require("log")
 
 function user.new(client, packet)
 	local user = setmetatable({
 		client = client,
 		stats = {},
+		channel_id = 0,
 	}, user)
 
 	for desc, value in packet:list() do
@@ -32,21 +34,28 @@ function user:updateStats(packet)
 			self.stats[desc.name] = self.stats[desc.name] or {}
 			self.stats[desc.name].data = value
 
-			if b:readInt() == 0 and b:readInt() == 0 and b:readShort() == 0 then
+			local address
+			local isipv4 = b:readInt() == 0 and b:readInt() == 0 and b:readShort() == 0
+
+			if isipv4 and not self.stats[desc.name].ipv4 then
 				-- ipv4
+				address = ("%d.%d.%d.%d"):format(b[13], b[14], b[15], b[16])
 				self.stats[desc.name].ipv6 = false
 				self.stats[desc.name].ipv4 = true
-				self.stats[desc.name].string = ("%d.%d.%d.%d"):format(b[13], b[14], b[15], b[16])
-			else
+			elseif not isipv4 and not self.stats[desc.name].ipv6 then
 				-- ipv6
-				self.stats[desc.name].ipv6 = true
-				self.stats[desc.name].ipv4 = false
-				self.stats[desc.name].string = ("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x"):format(
+				address = ("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x"):format(
 					b[1], b[2], b[3], b[4],
 					b[5], b[6], b[7], b[8],
 					b[9], b[10], b[11], b[12],
 					b[13], b[14], b[15], b[16]
 				)
+				self.stats[desc.name].ipv6 = true
+				self.stats[desc.name].ipv4 = false
+			end
+			if address then
+				self.stats[desc.name].string = address
+				log.info("%s[%d] connected from %s", self.name, self:getID(), address)
 			end
 		else
 			self.stats[desc.name] = value

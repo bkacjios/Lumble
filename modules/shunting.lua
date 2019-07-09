@@ -323,7 +323,7 @@ function math.postfix(str)
 			if not functions[stack[#stack-1]] then
 				return false, ("misuse of ',' outside of funciton scope near '%s'"):format(prev_token)
 			elseif not functions[stack[#stack-1]].multi then
-				return false, ("unexpected ',' in function '%s'"):format(stack[#stack-1])
+				return false, ("unexpected ',' in single argument function '%s'"):format(stack[#stack-1])
 			end
 			args[#stack-1] = args[#stack-1] + 1
 		elseif token == "(" then
@@ -350,7 +350,7 @@ function math.postfix(str)
 			local valid = not tonumber(prev_token) and not constants[prev_token] and prev_token ~= ')' and prev_token ~= '!'
 
 			if token == '~' and not tonumber(peekToken(buf, 1)) and not constants[buf:peekPattern("^%a+")] then
-				return false, "operator '~' needs a number or constnat after it"
+				return false, ("operator '%s' needs a number or constant after it"):format(token)
 			elseif token == '!' and valid then
 				if prev_token then
 					return false, ("unexpected token '%s' after '%s', expected number or constant"):format(token, prev_token)
@@ -591,6 +591,7 @@ local expression = "min(-3, max(-2,-1,0,1,2)) + sin 1"
 local expression = "1 + 1 - 1 - 1 * 2 - 3 ^ 4 / 5 / 2 * 2 + 6 - 7"
 local expression = "(6-1)! + 0! + -1/5^2"
 local expression = "6-1x0+2÷2+π"
+local expression = "220 / 6 + 30 + "
 
 local stack, err = math.postfix(expression)
 

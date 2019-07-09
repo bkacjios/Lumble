@@ -60,12 +60,14 @@ end
 
 function channel:getUsers()
 	local users = {}
+	local num = 0
 	for session, user in pairs(self.client.users) do
 		if self.channel_id == user.channel_id then
 			users[user.session] = user
+			num = num + 1
 		end
 	end
-	return users
+	return users, num
 end
 
 function channel:isUserTalking()
