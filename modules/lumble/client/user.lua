@@ -13,6 +13,7 @@ function user.new(client, packet)
 		client = client,
 		stats = {},
 		channel_id = 0,
+		channel_id_prev = 0,
 	}, user)
 
 	for desc, value in packet:list() do
@@ -150,6 +151,10 @@ end
 
 function user:getChannel(path)
 	return self.client.channels[self.channel_id or 0](path)
+end
+
+function user:getPreviousChannel(path)
+	return self.client.channels[self.channel_id_prev or 0](path)
 end
 
 function user:getSession()

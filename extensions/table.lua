@@ -85,6 +85,54 @@ function table.print( t, indent, done )
 	io.stdout:flush()
 end
 
+do
+	local function val_to_str(v, stack, scope)
+		if type(v) == "string" then
+			v = string.gsub(v, "\n", "\\n" )
+			if string.match(string.gsub(v,"[^'\"]",""), '^"+$') then
+				return "'" .. v .. "'"
+			end
+			return '"' .. string.gsub(v,'"', '\\"' ) .. '"'
+		else
+			return type(v) == "table" and table.tostring(v, stack, scope) or tostring(v)
+		end
+	end
+
+	local function key_to_str(k, stack, scope)
+		if type(k) == "string" and string.match(k, "^[_%a][_%a%d]*$") then
+			return k
+		else
+			return "[" .. val_to_str(k, stack, scope) .. "]"
+		end
+	end
+
+	function table.tostring(tbl, stack, scope)
+		stack = stack or {}
+		scope = scope or 0
+
+		if stack[tbl] then return error("circular reference") end
+
+		stack[tbl] = true
+		scope = scope + 1
+
+		local result = "{\n"
+
+		for k, v in pairs(tbl) do
+			local tabs = string.rep("\t", scope)
+			if type(v) == "table" then
+				result = result .. tabs .. key_to_str(k, stack, scope) .. " = " .. table.tostring(v, stack, scope) .. "\n"
+			else
+				result = result .. tabs .. key_to_str(k, stack, scope) .. " = " .. val_to_str(v, stack, scope) .. "\n"
+			end
+		end
+
+		scope = scope - 1
+		stack[tbl] = nil
+
+		return result .. string.rep("\t", scope) .. "}"
+	end
+end
+
 function table.concatList(table, oxford)
 	local str = ""
 	local num = #table

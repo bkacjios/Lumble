@@ -15,21 +15,20 @@ local params = {
 }
 
 --local client = mumble.getClient("198.27.70.16", 7331, params)
---local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
 --local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
-local client = mumble.getClient("server.bitassemble.com", 64738, params)
+local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
 
 if not client then return end 
 client:auth("LuaBot", "dix", {"dnd", "hedoesntevenknow", })
 
---[[client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
+client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
 	if event.channel ~= client.me:getChannel() then return end
 
 	local day = tonumber(os.date("%w"))
 	local hour = tonumber(os.date("%H"))
 	local minute = tonumber(os.date("%M"))
 
-	if day == 2 then
+	if day == 4 then
 		if hour >= 18 and hour <= 19 then
 			if hour == 18 and 59-minute > 0 then
 				client.me:getChannel():message("%s is %d minutes early for DND", event.user:getName(), 59-minute)
@@ -38,13 +37,25 @@ client:auth("LuaBot", "dix", {"dnd", "hedoesntevenknow", })
 			end
 		end
 	end
-end)]]
+end)
+
+client:hook("OnUserChannel", "LuaBot - OS Channels", function(client, event)
+	local linux = client:getChannel("Linux")
+	local windows = client:getChannel("Windows")
+
+	local os_version = event.user:getStats()["version"]["os_version"]
+
+	if (event.channel == linux and not string.find(os_version:lower(), "linux", 1, true)) or 
+		(event.channel == windows and not string.find(os_version:lower(), "win", 1, true)) then
+		event.user:move(event.user:getPreviousChannel())
+	end
+end)
 
 local function findMostPopularChannel()
 	local party = client.me:getChannel()
 
-	local root = client:getChannel():getName()
-	local afkchannel = client:getChannel(config.afk.channel[root] or "AFK")
+	local root = client:getChannel()
+	local afkchannel = client:getChannel(config.afk.channel[root:getName()] or "AFK")
 
 	if not afkchannel then return end
 
@@ -68,7 +79,7 @@ local function findMostPopularChannel()
 	return party
 end
 
-client:hook("OnUserState", "Alone Checker", function(event)
+client:hook("OnUserState", "Alone Checker", function(client, event)
 	if not client:isSynced() then return end
 
 	local users, num_users = client.me:getChannel():getUsers()
@@ -78,6 +89,18 @@ client:hook("OnUserState", "Alone Checker", function(event)
 		if party then
 			client.me:move(party)
 		end
+	end
+end)
+
+client:hook("OnUserState", "Muted - AFK", function(client, event)
+	local user = event.user
+	local root = client:getChannelRoot()
+	local afk = client:getChannel(config.afk.channel[root:getName()] or "AFK")
+
+	if event.self_deaf == true then
+		user:move(afk)
+	elseif event.self_deaf == false and user:getPreviousChannel() ~= afk then
+		user:move(user:getPreviousChannel())
 	end
 end)
 
@@ -108,7 +131,7 @@ client:hook("OnTextMessage", "soundboard", function(client, event)
 		end
 		if lfs.attributes(file,"mode") == "file" then
 			log.debug("%s played: #%s", user, message:sub(2))
-			client:playOgg(file, user.session + 10, 0.15)
+			client:playOgg(file, user.session + 10, 0.35)
 			return true
 		end
 	end
@@ -141,11 +164,12 @@ client:addCommand("math", function(client, user, cmd, args, raw)
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
 
 local name_convert = {
-	--[[["Amer"] = "Sancho",
-	["Atsu"] = "Drak",
+	["Amer"] = "Sancho",
+	["Aetsu"] = "Drak",
 	["Bkacjios"] = "Bhord",
 	["Paste"] = "Ranger Rick",
-	["Will"] = "Hrangus",]]
+	["Will"] = "Hrangus",
+	["NewDale"] = "Elph",
 }
 
 local card_suites = {
@@ -621,6 +645,32 @@ client:addCommand("rollstats", function(client, user, cmd, args)
 	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#3377ff\">%s</span></b>", user:getName(), table.concat(stats, ", "))
 end):setHelp("Rolls 4D6 and takes the highest 3 values, 6 times")
 
+local snapped = {}
+
+client:addCommand("snap", function(client, user, cmd, args)
+	local message = "<p>Thanos snapped and.."
+
+	local channel = user:getChannel()
+
+	if args[1] == "reset" then
+		snapped = {}
+		return
+	end
+
+	for session, user in pairs(channel:getUsers()) do
+		local name = user:getName()
+		if snapped[name] == nil then
+			snapped[name] = math.random() > 0.5
+		end
+
+		if snapped[name] then
+			message = message .. "<br><b>" .. name .. "</b>"
+		end
+	end
+
+	channel:message(message .. "<br> were killed")
+end):setHelp("thanos snap")
+
 client:addCommand("help", function(client, user, cmd, args, raw)
 	local message = "<table><tr><th>command</th><th>arguments</th><th>help</th></tr>"
 
@@ -706,7 +756,7 @@ client:hook("OnUserChannel", "LuaBot - User Restrict", function(client, event)
 
 	if restricted[path] and restricted[path][name] then
 		user:message("You are currently restricted from joining %s", channel:getName())
-		user:move(event.channel_from)
+		user:move(event.channel_prev)
 	end
 end)
 
@@ -789,10 +839,21 @@ client:addCommand("fade", function(client, user, cmd, args, raw)
 	client:getPlaying(tonumber(args[1]) or 1):fadeOut(tonumber(args[2]) or 5)
 end):setHelp("Fade out the current audio"):setUsage("[channel] [duration]")
 
+client:addCommand("endsession", function(client, user, cmd, args, raw)
+	local root = client:getChannelRoot()
+	local channel = client.me:getChannel()
+
+	if channel:getID() == 24 or channel:getID() == 45 then
+		for session, user in pairs(channel:getUsers()) do
+			user:move(root)
+		end
+	end
+end):setHelp("End the D&D session")
+
 client:addCommand("afk", function(client, user, cmd, args, raw)
 	local root = client:getChannel():getName()
 
-	local afkchannel = client:getChannel(config.afk.channel[root])
+	local afkchannel = client:getChannel(config.afk.channel[root:getName()] or "AFK")
 
 	if not afkchannel or user:getChannel() == afkchannel then return end
 
@@ -931,13 +992,13 @@ client:hook("OnTextMessage", "Thumbnails", function(client, event)
 	local twitch = message:match("twitch.tv/(%w+)")
 	--local other = message:match("(https?://[%w%p]+)")
 
-	if youtube then
+	--[[if youtube then
 		user:getChannel():message(formatYoutube(youtube))
 	elseif twitchclip then
 		user:getChannel():message(formatTwitchClip(twitch))
 	elseif twitch then
 		user:getChannel():message(formatTwitch(twitch))
-	end
+	end]]
 	--[[if other then
 		local ext = string.ExtensionFromFile(other):lower()
 		if valid_others[ext] then

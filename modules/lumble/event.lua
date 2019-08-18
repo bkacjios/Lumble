@@ -1,11 +1,12 @@
 local event = {}
 
-function event.new(instance, proto, all)
+function event.new(instance, packet, all)
 	local event = {}
 
-	for desc, value in proto:ListFields() do
+	for desc, value in packet:list() do
 		local name = desc.name
 		local tp = type(value)
+
 		if name == "session" then
 			if tp == "table" then
 				event["users"] = event["users"] or {}

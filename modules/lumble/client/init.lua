@@ -2,7 +2,7 @@ local client = {}
 client.__index = client
 
 local channel = require("lumble.client.channel")
-local user = require("lumble.client.user")
+local cuser = require("lumble.client.user")
 
 local permission = require("lumble.permission")
 local packet = require("lumble.packet")
@@ -62,7 +62,7 @@ function client.new(host, port, params)
 	encoder:set("vbr", 0)
 	encoder:set("bitrate", 41100)
 
-	local meta = {
+	local object = {
 		--crypt = ocbaes128.new(),
 		encoder = encoder,
 		tcp = tcp,
@@ -109,7 +109,20 @@ function client.new(host, port, params)
 		audio_volume = 0.15,
 		audio_buffer = ffi.new('float[?]', FRAME_SIZE),
 	}
-	return setmetatable(meta, client)
+
+	--[[
+	-- Create an event using the sockets file desciptor for when client is ready to read data
+	object.onread = ev.IO.new(function()
+		-- Read the request safely using xpcall
+		local succ, err = xpcall(object.readdata, debug.traceback, object)
+		if not succ then log.error(err) end
+	end, tcp:getfd(), ev.READ)
+
+	-- Register the event
+	object.onread:start(ev.Loop.default)
+	]]
+
+	return setmetatable(object, client)
 end
 
 function client:__tostring()
@@ -176,7 +189,7 @@ function client:hookCall(name, ...)
 	for desc, callback in pairs(self.hooks[name]) do
 		local succ, ret = xpcall(callback, debug.traceback, self, ...)
 		if not succ then
-			log.error("%s error: %s", name, desc)
+			log.error("%s (%s) error: %s", name, desc, ret)
 		elseif ret then
 			return ret
 		end
@@ -521,7 +534,7 @@ function client:onServerSync(packet)
 end
 
 function client:onChannelRemove(packet)
-	self:hookCall("OnChannelRemove", event.new(self, packet.proto))
+	self:hookCall("OnChannelRemove", event.new(self, packet))
 	self.channels[packet.channel_id] = nil
 end
 
@@ -529,19 +542,19 @@ function client:onChannelState(packet)
 	if not self.channels[packet.channel_id] then
 		self.channels[packet.channel_id] = channel.new(self, packet)
 		if self.synced then
-			self:hookCall("OnChannelCreated", event.new(self, packet.proto))
+			self:hookCall("OnChannelCreated", event.new(self, packet))
 		end
 	else
 		local channel = self.channels[packet.channel_id]
 		channel:update(packet)
 	end
-	self:hookCall("OnChannelState", event.new(self, packet.proto))
+	self:hookCall("OnChannelState", event.new(self, packet))
 end
 
 function client:onUserRemove(packet)
 	local user = packet.session and self.users[packet.session]
 	local actor = packet.actor and self.users[packet.actor]
-	local event = event.new(self, packet.proto, true)
+	local event = event.new(self, packet, true)
 
 	local message = "disconnected"
 	
@@ -557,31 +570,41 @@ function client:onUserRemove(packet)
 end
 
 function client:onUserState(packet)
+	local evnt
+	local user
+
 	if not self.users[packet.session] then
-		local user = user.new(self, packet)
+		user = cuser.new(self, packet)
 		self.users[packet.session] = user
 		self.num_users = self.num_users + 1
 		user:requestStats()
+
+		evnt = event.new(self, packet, true)
+
 		if self.synced then
 			log.info("%s connected", user)
-			self:hookCall("OnUserConnected", event.new(self, packet.proto))
+			self:hookCall("OnUserConnected", evnt)
 		end
 	else
-		local user = self.users[packet.session]
-		for desc, value in packet:list() do
-			local name = desc.name
-			if user[name] ~= value then
-				if name == "channel_id" then
-					local event = event.new(self, packet.proto)
-					event.channel_from = user:getChannel()
-					self:hookCall("OnUserChannel", event)
-				end
-				user[name] = value
-			end
+		user = self.users[packet.session]
+		evnt = event.new(self, packet, true)
+	end
+
+	local channel = user:getChannel()
+	if evnt.channel and evnt.channel ~= channel then
+		evnt.channel_prev = channel
+		user.channel_id_prev = user.channel_id
+		self:hookCall("OnUserChannel", evnt)
+	end
+
+	for desc, value in packet:list() do
+		local name = desc.name
+		if user[name] ~= value then
+			user[name] = value
 		end
 	end
 
-	self:hookCall("OnUserState", event.new(self, packet.proto))
+	self:hookCall("OnUserState", evnt)
 end
 
 function client:onBanList(packet)
@@ -589,7 +612,7 @@ function client:onBanList(packet)
 end
 
 function client:onTextMessage(packet)
-	local event = event.new(self, packet.proto, true)
+	local event = event.new(self, packet, true)
 
 	local msg = event.message:stripHTML():unescapeHTML()
 
@@ -660,7 +683,7 @@ function client:onContextAction(packet)
 end
 
 function client:onUserList(packet)
-	self:hookCall("OnUserList", event.new(self, packet.proto, true))
+	self:hookCall("OnUserList", event.new(self, packet, true))
 end
 
 function client:onVoiceTarget(packet)
@@ -687,7 +710,7 @@ function client:onUserStats(packet)
 	local user = self.users[packet.session]
 	if not user then return end
 	user:updateStats(packet)
-	self:hookCall("OnUserStats", event.new(self, packet.proto, true))
+	self:hookCall("OnUserStats", event.new(self, packet, true))
 end
 
 function client:onRequestBlob(packet)

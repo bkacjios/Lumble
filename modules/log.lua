@@ -1,62 +1,48 @@
---
--- log.lua
---
--- Copyright (c) 2016 rxi
---
--- This library is free software; you can redistribute it and/or modify it
--- under the terms of the MIT license. See LICENSE for details.
---
-
-local log = { _version = "0.1.0" }
-
-log.usecolor = true
-log.outfile = nil
-log.level = "debug"
-
-local modes = {
-	{ name = "trace", color = "\27[34m", },
-	{ name = "debug", color = "\27[36m", },
-	{ name = "info",  color = "\27[32m", },
-	{ name = "warn",  color = "\27[33m", },
-	{ name = "error", color = "\27[31m", },
-	{ name = "fatal", color = "\27[35m", },
+local log = {
+	levels = {
+		{ name = "trace", color = "\27[1;34m" },
+		{ name = "debug", color = "\27[1;36m" },
+		{ name = "info", color = "\27[1;32m" },
+		{ name = "warn", color = "\27[1;33m" },
+		{ name = "error", color = "\27[1;31m" },
+		{ name = "fatal", color = "\27[1;35m" },
+	},
+	color = jit.os == "Linux",
+	date = "%H:%M:%S",
+	level = "debug",
 }
 
-local levels = {}
-for i, v in ipairs(modes) do
-	levels[v.name] = i
+function log.setColor(b)
+	log.color = b
 end
 
-for i, x in ipairs(modes) do
-	local nameupper = x.name:upper()
-	log[x.name] = function(msg, ...)
-		
-		-- Return early if we're below the log level
+function log.setLevel(l)
+	log.level = l
+end
 
-		if i < levels[log.level] then
-			return
+local format = string.format
+
+for level, cfg in ipairs(log.levels) do
+	local upname = cfg.name:upper()
+	log[upname] = level
+
+	log[cfg.name] = function(text, ...)
+		if log[log.level:upper()] > log[upname] then return end
+
+		if select("#", ...) > 0 then
+			text = format(text, ...)
 		end
 
-		msg = string.format(msg, ...)
-		--local info = debug.getinfo(2, "Sl")
-		--local lineinfo = info.short_src .. ":" .. info.currentline
+		local date = os.date(log.date)
+		local message
 
-		-- Output to console
-		print(string.format("%s[%-6s%s]%s %s",
-			log.usecolor and x.color or "",
-			nameupper,
-			os.date("%H:%M:%S"),
-			log.usecolor and "\27[0m" or "",
-			msg))
-
-		-- Output to log file
-		if log.outfile then
-			local fp = io.open(log.outfile, "a")
-			local str = string.format("[%-6s%s] %s\n", nameupper, os.date(), msg)
-			fp:write(str)
-			fp:close()
+		if log.color then
+			message = format("[%s%-5s\27[0m - \27[2m%s\27[0m] %s", cfg.color, upname, date, text)
+		else
+			message = format("[%-5s - %s] %s", upname, date, text)
 		end
 
+		print(message)
 	end
 end
 
