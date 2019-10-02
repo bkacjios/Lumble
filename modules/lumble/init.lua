@@ -72,7 +72,7 @@ function mumble.update()
 
 	for host, clients in pairs(mumble.clients) do
 		for port, client in pairs(clients) do
-			local status, err = client:update()
+			local status, err = client:doping()
 			if not status and err then
 				mumble.clients[host][port] = nil
 				table.insert(mumble.reconnect, {

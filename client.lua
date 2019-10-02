@@ -7,19 +7,35 @@ package.path = package.path .. ';./modules/?.lua;./modules/?/init.lua'
 --require'log'.level = 'trace'
 --local copas = require("copas")
 local autoreload = require("autoreload")
-local terminal = require("terminal")
 local concommand = require("concommand")
 local mumble = require("lumble")
 
+local ev = require("ev")
+
 require("scripts")
 
-local function main()
-	autoreload.poll()
-	mumble.update()
+local function exit(loop, sig, revents)
+	loop:unloop()
 end
 
-terminal.new(main, concommand.loop)
-terminal.loop()
+ev.Signal.new(exit, ev.SIGINT):start(ev.Loop.default)
+
+local evt = ev.IO.new(function()
+	xpcall(concommand.loop, debug.traceback)
+end, 0, ev.READ)
+evt:start(ev.Loop.default)
+
+local timer = ev.Timer.new(function()
+	autoreload.poll()
+end, 1, 1)
+timer:start(ev.Loop.default)
+
+local timer = ev.Timer.new(function()
+	mumble.update()
+end, 10, 10)
+timer:start(ev.Loop.default)
+
+ev.Loop.default:loop()
 
 print()
 

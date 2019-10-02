@@ -110,17 +110,15 @@ function client.new(host, port, params)
 		audio_buffer = ffi.new('float[?]', FRAME_SIZE),
 	}
 
-	--[[
 	-- Create an event using the sockets file desciptor for when client is ready to read data
 	object.onread = ev.IO.new(function()
 		-- Read the request safely using xpcall
-		local succ, err = xpcall(object.readdata, debug.traceback, object)
+		local succ, err = xpcall(object.readtcp, debug.traceback, object)
 		if not succ then log.error(err) end
 	end, tcp:getfd(), ev.READ)
 
 	-- Register the event
 	object.onread:start(ev.Loop.default)
-	]]
 
 	return setmetatable(object, client)
 end
@@ -131,6 +129,7 @@ end
 
 function client:close()
 	self.tcp:close()
+	--self.udp:close()
 end
 
 function client:isSynced()
@@ -324,21 +323,22 @@ function client:readUDP()
 	end
 end
 
-function client:update()
-	local now = socket.gettime()
+function client:doping()
+	if self.pings_tcp >= 3 then
+		log.error("No response from server..", err)
+		self:close()
+		return false, "No response from server.."
+	end
 
-	if self.synced and (not self.next_ping or self.next_ping <= now) then
-		self.next_ping = now + 5
+	if self.synced then
 		self:pingTCP()
 		--self:pingUDP()
 	end
 
-	if (self.pings_tcp > 5) then
-		return false, "No response from server.."
-	end
+	return true
+end
 
-	--self:readUDP()
-
+function client:readtcp()
 	local read = true
 	local err
 
@@ -352,38 +352,31 @@ function client:update()
 			local len = buff:readInt()
 			
 			if not id or not len then
-				log.warn("Bad backet: %q", read)
-				return true
-			end
-
-			read, err = self.tcp:receive(len)
-
-			if id == 1 then
-				local voice = buffer(read)
-				local header = voice:readByte()
-
-				local codec = bit.rshift(header, 5)
-				local target = bit.band(header, 31)
-
-				self:receiveVoiceData(voice, codec, target)
+				log.warn("malformed packet: %q", read)
 			else
-				local packet = packet.new(id, read)
-				self:onPacket(packet)
+				read, err = self.tcp:receive(len)
+
+				if id == 1 then
+					local voice = buffer(read)
+					local header = voice:readByte()
+
+					local codec = bit.rshift(header, 5)
+					local target = bit.band(header, 31)
+
+					self:receiveVoiceData(voice, codec, target)
+				else
+					local packet = packet.new(id, read)
+					self:onPacket(packet)
+				end
 			end
 		elseif err == "wantread" then
-			return true
 		elseif err == "wantwrite" then
-			return true
 		elseif err == "timeout" then
-			return true
 		else
 			log.error("TCP connection error %q", err)
-			self.tcp:close()
-			return false, err
+			self:close()
 		end
 	end
-
-	return false
 end
 
 local sequence = 1

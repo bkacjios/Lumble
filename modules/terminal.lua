@@ -5,10 +5,6 @@ local log = require("log")
 
 local loop = ev.Loop.default
 
-local function error(str)
-	log.error(debug.traceback(str, 2))
-end
-
 local function exit(loop, sig, revents)
 	loop:unloop()
 end
@@ -18,12 +14,12 @@ function terminal.new(main, input)
 	sig:start(loop)
 
 	local evt = ev.IO.new(function()
-		xpcall(input, error)
+		xpcall(input, debug.traceback)
 	end, 0, ev.READ)
 	evt:start(loop)
 
 	local timer = ev.Timer.new(function()
-		xpcall(main, error)
+		xpcall(main, debug.traceback)
 	end, 0.1, 0.1)
 	timer:start(loop)
 end
