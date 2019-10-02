@@ -21,7 +21,7 @@ local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
 if not client then return end 
 client:auth("LuaBot", "dix", {"dnd", "hedoesntevenknow", })
 
-client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
+--[[client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
 	if event.channel ~= client.me:getChannel() then return end
 
 	local day = tonumber(os.date("%w"))
@@ -37,7 +37,7 @@ client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
 			end
 		end
 	end
-end)
+end)]]
 
 client:hook("OnUserChannel", "LuaBot - OS Channels", function(client, event)
 	local linux = client:getChannel("Linux")

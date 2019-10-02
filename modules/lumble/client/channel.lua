@@ -100,7 +100,7 @@ end
 function channel:message(text, ...)
 	text = text or ""
 	text = text:format(...)
-	if #text > self.client.config.message_length then
+	if #text > self.client.config.message_length and self.client.config.message_length > 0 then
 		text = string.ellipse(text, self.client.config.message_length)
 	end
 	local msg = packet.new("TextMessage")

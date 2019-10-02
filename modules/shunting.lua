@@ -124,6 +124,12 @@ local operators = {
 		method = function(a) return -a end,
 		args = 1,
 	},
+	["×"] = {
+		precedence = 3,
+		associativity = "left",
+		method = function(a, b) return a * b end,
+		args = 2,
+	},
 	["x"] = {
 		precedence = 3,
 		associativity = "left",
