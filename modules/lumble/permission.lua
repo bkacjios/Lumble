@@ -13,6 +13,7 @@ local permission = {
 		UserName = 8,
 		ChannelFull = 9,
 		NestingLimit = 10,
+		ChannelLimit = 11,
 	},
 	type_name = {
 		[0] = "Text",
@@ -26,6 +27,7 @@ local permission = {
 		[8] = "UserName",
 		[9] = "ChannelFull",
 		[10] = "NestingLimit",
+		[11] = "ChannelLimit",
 	},
 	enum = {
 		NONE = 0x0,

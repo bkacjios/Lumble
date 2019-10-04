@@ -94,8 +94,8 @@ end)
 
 client:hook("OnUserState", "Muted - AFK", function(client, event)
 	local user = event.user
-	local root = client:getChannelRoot()
-	local afk = client:getChannel(config.afk.channel[root:getName()] or "AFK")
+	local root = client:getChannelRoot():getName()
+	local afk = client:getChannel(config.afk.channel[root] or "AFK")
 
 	if event.self_deaf == true then
 		user:move(afk)
@@ -851,9 +851,9 @@ client:addCommand("endsession", function(client, user, cmd, args, raw)
 end):setHelp("End the D&D session")
 
 client:addCommand("afk", function(client, user, cmd, args, raw)
-	local root = client:getChannel():getName()
+	local root = client:getChannelRoot():getName()
 
-	local afkchannel = client:getChannel(config.afk.channel[root:getName()] or "AFK")
+	local afkchannel = client:getChannel(config.afk.channel[root] or "AFK")
 
 	if not afkchannel or user:getChannel() == afkchannel then return end
 

@@ -24,7 +24,7 @@ local socket = require("socket")
 
 local stream = require("lumble.client.audiostream")
 
---local ocbaes128 = require("ocb.aes128")
+local ocbaes128 = require("ocb.aes128")
 
 require("extensions.string")
 
@@ -44,10 +44,10 @@ function client.new(host, port, params)
 	local tcp = socket.tcp()
 	tcp:settimeout(5)
 
-	local udp = socket.udp()
+	--[[local udp = socket.udp()
 	local status, err = udp:setpeername(host, port)
 	if not status then return false, err end
-	udp:settimeout(0)
+	udp:settimeout(0)]]
 
 	local status, err = tcp:connect(host, port)
 	if not status then return false, err end
@@ -63,10 +63,10 @@ function client.new(host, port, params)
 	encoder:set("bitrate", 41100)
 
 	local object = {
-		--crypt = ocbaes128.new(),
+		crypt = ocbaes128.new(),
 		encoder = encoder,
 		tcp = tcp,
-		udp = udp,
+		--udp = udp,
 		host = host,
 		port = port,
 		params = params,
@@ -83,6 +83,7 @@ function client.new(host, port, params)
 			tcp_ping_var = 0,
 		},
 		pings_tcp = 0,
+		pings_udp = 0,
 		version = {},
 		channels = {},
 		users = {},
@@ -111,14 +112,37 @@ function client.new(host, port, params)
 	}
 
 	-- Create an event using the sockets file desciptor for when client is ready to read data
-	object.onread = ev.IO.new(function()
+	object.onreadtcp = ev.IO.new(function()
 		-- Read the request safely using xpcall
 		local succ, err = xpcall(object.readtcp, debug.traceback, object)
 		if not succ then log.error(err) end
 	end, tcp:getfd(), ev.READ)
 
+	-- Create an event using the sockets file desciptor for when client is ready to read data
+	--[[object.onreadudp = ev.IO.new(function()
+		-- Read the request safely using xpcall
+		local succ, err = xpcall(object.readudp, debug.traceback, object)
+		if not succ then log.error(err) end
+	end, udp:getfd(), ev.READ)]]
+
+	-- Get the length of our timer for the audio stream..
+	local time = FRAME_DURATION / 1000
+
+	object.audio_timer = ev.Timer.new(function()
+		local succ, err = xpcall(object.streamAudio, debug.traceback, object)
+		if not succ then log.error(err) end
+	end, time, time)
+
+	object.ping_timer = ev.Timer.new(function()
+		local succ, err = xpcall(object.doping, debug.traceback, object)
+		if not succ then log.error(err) end
+	end, 5, 5)
+
 	-- Register the event
-	object.onread:start(ev.Loop.default)
+	object.onreadtcp:start(ev.Loop.default)
+	--object.onreadudp:start(ev.Loop.default)
+	object.audio_timer:start(ev.Loop.default)
+	object.ping_timer:start(ev.Loop.default)
 
 	return setmetatable(object, client)
 end
@@ -130,6 +154,9 @@ end
 function client:close()
 	self.tcp:close()
 	--self.udp:close()
+	if self:isSynced() then
+		self:hookCall("OnDisconnect")
+	end
 end
 
 function client:isSynced()
@@ -154,16 +181,23 @@ function client:playOgg(file, channel, volume, count)
 	return ogg, err
 end
 
+function client:setGlobalVolume(volume)
+	self.audio_volume = volume
+end
+
+function client:getAudioVolume()
+	return self.audio_volume
+end
+
 function client:setVolume(volume, channel)
 	channel = channel or 1
-	self.audio_volume = volume
 	if self.audio_streams[channel] then
 		self.audio_streams[channel]:setVolume(volume)
 	end
 end
 
-function client:getVolume()
-	return self.audio_volume
+function client:getVolume(channel)
+	return self.audio_streams[channel or 1]:getVolume()
 end
 
 function client:hook(name, desc, callback)
@@ -250,8 +284,9 @@ end
 function client:pingUDP()
 	local b = buffer()
 	b:writeByte(bit.lshift(UDP_PING, 5))
-	b:writeString("test")
+	--b:writeString("test")
 	self:sendUDP(b)
+	--self.pings_udp = self.pings_udp + 1
 end
 
 local record = io.open("data.vorbis", "wba")
@@ -267,7 +302,7 @@ function client:receiveVoiceData(packet, codec, target)
 	if codec == UDP_SPEEX or codec == UDP_CELT_ALPHA or codec == UDP_CELT_BETA then
 		local header = packet:readByte()
 		talking = bit.band(header, 0x80) ~= 0x80
-	elseif codec == UDP_OPUS then 
+	elseif codec == UDP_OPUS then
 		local header = packet:readMumbleVarInt()
 
 		local len = bit.band(header, 0x1FFF)
@@ -300,7 +335,22 @@ function client:receiveVoiceData(packet, codec, target)
 	end
 end
 
-function client:readUDP()
+function client:doping()
+	if self.pings_tcp >= 3 then
+		log.error("No response from server..", err)
+		self:close()
+		return false
+	end
+
+	if self.synced then
+		self:pingTCP()
+		--self:pingUDP()
+	end
+
+	return true
+end
+
+function client:readudp()
 	local read = true
 	local err
 
@@ -321,21 +371,6 @@ function client:readUDP()
 			return false, err
 		end
 	end
-end
-
-function client:doping()
-	if self.pings_tcp >= 3 then
-		log.error("No response from server..", err)
-		self:close()
-		return false, "No response from server.."
-	end
-
-	if self.synced then
-		self:pingTCP()
-		--self:pingUDP()
-	end
-
-	return true
 end
 
 function client:readtcp()
@@ -383,18 +418,6 @@ local sequence = 1
 
 local bor = bit.bor
 local lshift = bit.lshift
-
-function client:createAudioStream()
-	if self.audio_timer then return end
-
-	-- Get the length of our timer..
-	local time = FRAME_DURATION / 1000
-
-	self.audio_timer = ev.Timer.new(function()
-		self:streamAudio()
-	end, time, time)
-	self.audio_timer:start(ev.Loop.default)
-end
 
 function client:createAudioPacket(codec, target, seq)
 	local b = buffer()
@@ -483,7 +506,9 @@ function client:onPacket(packet)
 	end
 
 	log.trace("received %s", packet)
-	func(self, packet)
+
+	local succ, err = xpcall(func, debug.traceback, self, packet)
+	if not succ then log.error(err) end
 end
 
 function client:onVersion(packet)
@@ -522,7 +547,6 @@ function client:onServerSync(packet)
 	self.me = self.users[self.session]
 	self.num_users = self.num_users + 1
 	log.info("message: %s", packet.welcome_text:stripHTML())
-	self:createAudioStream()
 	self:hookCall("OnServerSync", self.me)
 end
 
@@ -656,13 +680,23 @@ end
 function client:onCryptSetup(packet)
 	for desc, value in packet:list() do
 		self.crypt_keys[desc.name] = value
+
+		print(desc.name, string.tohex(value))
 	end
 
-	--[[if packet.key and packet.client_nonce and packet.server_nonce then
+	if packet.key and packet.client_nonce and packet.server_nonce then
+		--[[
+		const std::string &key = msg.key();
+		const std::string &client_nonce = msg.client_nonce();
+		const std::string &server_nonce = msg.server_nonce();
+		if (key.size() == AES_KEY_SIZE_BYTES && client_nonce.size() == AES_BLOCK_SIZE && server_nonce.size() == AES_BLOCK_SIZE)
+			c->csCrypt.setKey(reinterpret_cast<const unsigned char *>(key.data()), reinterpret_cast<const unsigned char *>(client_nonce.data()), reinterpret_cast<const unsigned char *>(server_nonce.data()));
+		]]
+
 		self.crypt:setKey(packet.key, packet.client_nonce, packet.server_nonce)
 	elseif packet.server_nonce then
 		self.crypt:setDecryptIV(packet.server_nonce)
-	end]]
+	end
 	
 	self:hookCall("OnCryptSetup")
 end

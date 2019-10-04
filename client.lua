@@ -20,20 +20,14 @@ end
 
 ev.Signal.new(exit, ev.SIGINT):start(ev.Loop.default)
 
-local evt = ev.IO.new(function()
+ev.IO.new(function()
 	xpcall(concommand.loop, debug.traceback)
-end, 0, ev.READ)
-evt:start(ev.Loop.default)
+end, 0, ev.READ):start(ev.Loop.default)
 
-local timer = ev.Timer.new(function()
+ev.Timer.new(function()
 	autoreload.poll()
-end, 1, 1)
-timer:start(ev.Loop.default)
-
-local timer = ev.Timer.new(function()
 	mumble.update()
-end, 10, 10)
-timer:start(ev.Loop.default)
+end, 1, 1):start(ev.Loop.default)
 
 ev.Loop.default:loop()
 

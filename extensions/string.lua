@@ -56,6 +56,12 @@ function string.AddCommas(str)
 	return tostring(str):reverse():gsub("(...)", "%1,"):gsub(",$", ""):reverse()
 end
 
+function string.fromhex(str)
+	return (str:gsub('..', function (cc)
+		return char(tonumber(cc, 16))
+	end))
+end
+
 function string.tohex(str)
 	return (str:gsub('.', function (c)
 		return format('%02X', byte(c))

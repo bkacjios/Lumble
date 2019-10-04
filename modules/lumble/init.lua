@@ -15,13 +15,27 @@ function mumble.connect(host, port, params, noretry)
 
 	if not client then
 		if not noretry then
-			table.insert(mumble.reconnect, {host = host, port = port, params = params, time = os.time() + 1, try = 1})
+			table.insert(mumble.reconnect, {host = host, port = port, params = params, try = 1})
 		end
 		return false, err
 	end
 
 	mumble.clients[host] = mumble.clients[host] or {}
 	mumble.clients[host][port] = client
+
+	-- If we disconnect, try to reconnect
+	client:hook("OnDisconnect", "Reconnect on Disconnect", function(client)
+		mumble.clients[client.host][client.port] = nil
+		table.insert(mumble.reconnect, {
+			host = client.host,
+			port = client.port,
+			params = client.params,
+			username = client.username,
+			password = client.password,
+			tokens = client.tokens,
+			try = 1,
+		})
+	end)
 
 	reload.reload("scripts")
 
@@ -54,41 +68,16 @@ function mumble.host(host, port)
 end
 
 function mumble.update()
-	local time = os.time()
-
 	for i, info in pairs(mumble.reconnect) do
-		if info.time <= time then
-			log.debug("reconnecting.. (%s attempt)", math.stndrd(info.try))
-			local client, err = mumble.connect(info.host, info.port, info.params, true)
-			if client then
-				mumble.reconnect[i] = nil
-				client:auth(info.username, info.password, info.tokens)
-			else
-				info.time = time + (info.try * 5)
-				info.try = info.try + 1
-			end
+		log.debug("reconnecting.. (%s attempt)", math.stndrd(info.try))
+		local client, err = mumble.connect(info.host, info.port, info.params, true)
+		if client then
+			mumble.reconnect[i] = nil
+			client:auth(info.username, info.password, info.tokens)
+		else
+			info.try = info.try + 1
 		end
 	end
-
-	for host, clients in pairs(mumble.clients) do
-		for port, client in pairs(clients) do
-			local status, err = client:doping()
-			if not status and err then
-				mumble.clients[host][port] = nil
-				table.insert(mumble.reconnect, {
-					host = client.host,
-					port = client.port,
-					params = client.params,
-					username = client.username,
-					password = client.password,
-					tokens = client.tokens,
-					time = time + 1,
-					try = 1,
-				})
-			end
-		end
-	end
-
 end
 
 --[[function mumble.setup()
