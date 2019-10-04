@@ -14,11 +14,9 @@ local ev = require("ev")
 
 require("scripts")
 
-local function exit(loop, sig, revents)
+ev.Signal.new(function(loop, sig, revents)
 	loop:unloop()
-end
-
-ev.Signal.new(exit, ev.SIGINT):start(ev.Loop.default)
+end, ev.SIGINT):start(ev.Loop.default)
 
 ev.IO.new(function()
 	xpcall(concommand.loop, debug.traceback)
