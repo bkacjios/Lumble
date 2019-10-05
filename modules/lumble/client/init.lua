@@ -60,7 +60,7 @@ function client.new(host, port, params)
 
 	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 	encoder:set("vbr", 0)
-	encoder:set("bitrate", 41100)
+	encoder:set("bitrate", 57000) --41100
 
 	local object = {
 		crypt = ocbaes128.new(),
@@ -154,6 +154,12 @@ end
 function client:close()
 	self.tcp:close()
 	--self.udp:close()
+
+	self.onreadtcp:stop()
+	--self.onreadudp:stop()
+	self.audio_timer:stop()
+	self.ping_timer:stop()
+
 	if self:isSynced() then
 		self:hookCall("OnDisconnect")
 	end
@@ -680,8 +686,6 @@ end
 function client:onCryptSetup(packet)
 	for desc, value in packet:list() do
 		self.crypt_keys[desc.name] = value
-
-		print(desc.name, string.tohex(value))
 	end
 
 	if packet.key and packet.client_nonce and packet.server_nonce then
@@ -696,6 +700,8 @@ function client:onCryptSetup(packet)
 		self.crypt:setKey(packet.key, packet.client_nonce, packet.server_nonce)
 	elseif packet.server_nonce then
 		self.crypt:setDecryptIV(packet.server_nonce)
+	else
+
 	end
 	
 	self:hookCall("OnCryptSetup")

@@ -16,7 +16,8 @@ local params = {
 
 --local client = mumble.getClient("198.27.70.16", 7331, params)
 --local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
-local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
+--local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
+local client = mumble.getClient("::1", 64738, params)
 
 if not client then return end 
 client:auth("LuaBot", "dix", {"dnd", "hedoesntevenknow", })
@@ -522,6 +523,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local rolls = {}
 	local orig_str = str
 	local num_rolls = 0
+	local max_roll = 0
 
 	str = string.gsub(str, "(%d-)[Dd](%d+)", function(num, dice)
 		num = tonumber(num) or 1
@@ -529,6 +531,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		local results, total = math.roll(dice, num)
 		rolls[dice] = rolls[dice] or {}
 		num_rolls = num_rolls + num
+		max_roll = max_roll + (dice * num)
 		for k, result in pairs(results) do
 			table.insert(rolls[dice], result)
 		end
@@ -551,11 +554,17 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local username = user:getName()
 	local name = name_convert[username] or username
 
-	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#3377ff\">%s</span></b> and got <b><span style=\"color:#3377ff\">%s</span></b>", name, orig_str:gsub("%s+", ""), total)
+	local color = "#3377ff"
+	if total == max_roll then
+		color = "#00aa00"
+	elseif total == num_rolls then
+		color = "#aa0000"
+	end
+
+	local message = string.format("<p><b>%s</b> rolled <b><span style=\"color:#3377ff\">%s</span></b> and got <b><span style=\"color:%s\">%s</span></b>", name, orig_str:gsub("%s+", ""), color, total)
 
 	if #stack > 2 then
-		message = message .. ("\n<table><tr><td><b>Equation</b></td><td>: %s</td></tr>"):format(equation:gsub("%%", "%%%%"))
-		message = message .. ("\n<tr><td><b>Solution</b></td><td>: %s</td></tr>"):format(total)
+		message = message .. "<table>"
 
 		for dice, results in pairs(rolls) do
 			local roll_list = ""
@@ -573,6 +582,9 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 			end
 			message = message .. ("\n<tr><td><b>D%d Rolls</b></td><td>: %s</td></tr>"):format(dice, roll_list)
 		end
+
+		message = message .. ("\n<tr><td><b>Equation</b></td><td>: %s</td></tr>"):format(equation:gsub("%%", "%%%%"))
+		message = message .. ("\n<tr><td><b>Solution</b></td><td>: %s</td></tr>"):format(total)
 
 		message = message .. "</table>"
 	end
