@@ -84,7 +84,7 @@ env._G = env
 env.__newindex = env
 
 local function sandbox(user, func)
-	local getPlayer = function(name)
+	local getUser = function(name)
 		for session,user in pairs(user:getClient():getUsers()) do
 			if user:getName() == name then
 				return user
@@ -93,14 +93,14 @@ local function sandbox(user, func)
 	end
 
 	env.__index = function(self, index)
-		return rawget(env, index) or getPlayer(index)
+		return rawget(env, index) or getUser(index)
 	end,
 
 	setfenv(func, setmetatable({
 		print = function(...)
 			local txts = {}
-			for k,v in pairs({...}) do
-				table.insert(txts, tostring(v))
+			for i=1, select("#", ...) do
+				table.insert(txts, tostring(select(i, ...)))
 			end
 			user:message(table.concat(txts, ", "))
 		end,

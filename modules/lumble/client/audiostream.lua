@@ -45,10 +45,11 @@ end
 function STREAM:setUserTalking(talking)
 	self.talking_count = self.talking_count + (talking and 1 or -1)
 	if self.talking_count >= 1 and not self.ducked then
+		-- When people are talking, mark the audio as ducked, and abruptly fade the volume to 25%
 		self.ducked = true
-		--self.duck_volume = 0.25
 		self:duckTo(0.25, 0.2)
 	else
+		-- WHen no one is talking, unmark and raise volume back to 100% gradually over a second.
 		self.ducked = false
 		self:duckTo(1, 1)
 	end
@@ -69,6 +70,7 @@ function STREAM:streamSamples(duration, sample_rate, channels)
 		num_samples = math.ceil(sample_size * scale)
 
 		for t=0,num_samples/2 do
+			-- Resample the audio to fit within the requested sample_rate
 			self.rebuffer[t * 2] = self.buffer[math.floor(t / sample_rate * source_rate) * 2] * 2
 		end
 
@@ -76,10 +78,12 @@ function STREAM:streamSamples(duration, sample_rate, channels)
 		copy(self.buffer, self.rebuffer, sizeof(self.rebuffer))
 	end
 
-	local fade_percent = 1
-	local duck_percent = 1
+	local fade_percent = 1 -- How much fade has been applied.
+	local duck_percent = 1 -- How much secondary fade has been applied.
 
+	-- If it's the end of the audio stream, and we still have a loop counter..
 	if num_samples < sample_size and self.loop_count > 1 then
+		-- Subtract from loop counter and go back to the start
 		self.loop_count = self.loop_count - 1
 		self:seek("start")
 	end
@@ -109,15 +113,22 @@ function STREAM:streamSamples(duration, sample_rate, channels)
 	return self.buffer, num_samples
 end
 
+-- Set the volume
 function STREAM:setVolume(volume)
 	self.volume = volume
 end
 
+function STREAM:getVolume()
+	return self.volume
+end
+
+-- Fade the audio to 0 over time, then stop the stream.
 function STREAM:fadeOut(time)
 	self:fadeTo(0, time)
 	self.fade_stop = true
 end
 
+-- A method for fading audio to a specified volume over a duration.
 function STREAM:fadeTo(volume, time)
 	self.fade_frames = self.info.sample_rate * (time or 1)
 	self.fade_frames_left = self.fade_frames
@@ -125,6 +136,8 @@ function STREAM:fadeTo(volume, time)
 	self.fade_to_volume = volume
 end
 
+-- A method for fading audio to a specified volume over a duration.
+-- This is mostly used as a secondary fade for a music stream when someone is talking.
 function STREAM:duckTo(volume, time)
 	self.duck_frames = self.info.sample_rate * (time or 1)
 	self.duck_frames_left = self.duck_frames
@@ -132,14 +145,12 @@ function STREAM:duckTo(volume, time)
 	self.duck_to_volume = volume
 end
 
-function STREAM:getVolume()
-	return self.volume
-end
-
+-- Loop the stream a specified number of times.
 function STREAM:loop(count)
 	self.loop_count = count or 0
 end
 
+-- Seek to a position within the audio track.
 function STREAM:seek(pos)
 	if pos == "start" then
 		stb.stb_vorbis_seek_start(self.vorbis)
@@ -150,6 +161,7 @@ function STREAM:seek(pos)
 	end
 end
 
+-- Close the audio stream cleanly.
 function STREAM:close()
 	stb.stb_vorbis_close(self.vorbis)
 end

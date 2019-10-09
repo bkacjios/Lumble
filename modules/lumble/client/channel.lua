@@ -37,27 +37,35 @@ function channel:get(path)
 
 	local channel = self
 
-	for k in path:gmatch("([^/]+)") do
+	for match in path:gmatch("([^/]+)") do
 		local current
-		if k == "." then
+		if match == "." then
+			-- Stay within the current path
 			current = channel
-		elseif k == ".." then
+		elseif match == ".." then
+			-- Go back a channel
 			current = channel:getParent()
+		elseif match == "~" then
+			-- Go to the root channel
+			current = self.client.channels[0]
 		else
 			for id, chan in pairs(self.client.channels) do
-				if chan.channel_id ~= chan.parent and chan.parent == channel.channel_id and k == chan.name then
+				-- Only match if the channel is a parent of the current channel and the names match.
+				if chan.parent == channel.channel_id and match == chan.name then
 					current = chan
+					break
 				end
 			end
 		end
 		if current == nil then
-			return nil
+			return nil, ("Unknown channel %q"):format(path)
 		end
 		channel = current
 	end
 	return channel
 end
 
+-- Return a table of all the users in this channel and the number of entries in the table
 function channel:getUsers()
 	local users = {}
 	local num = 0
@@ -70,6 +78,7 @@ function channel:getUsers()
 	return users, num
 end
 
+-- Check to see if anyone is talking within the channel
 function channel:isUserTalking()
 	for session, user in pairs(self.client.users) do
 		if user:isTalking() then
@@ -101,6 +110,7 @@ function channel:message(text, ...)
 	text = text or ""
 	text = text:format(...)
 	if #text > self.client.config.message_length and self.client.config.message_length > 0 then
+		-- If the text is longer than the server limit, ellipse it to fit within the bounds.
 		text = string.ellipse(text, self.client.config.message_length)
 	end
 	local msg = packet.new("TextMessage")

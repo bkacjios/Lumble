@@ -28,7 +28,7 @@ local ocbaes128 = require("ocb.aes128")
 
 require("extensions.string")
 
-local CHANNELS = 1
+local CHANNELS = 2
 local SAMPLE_RATE = 48000
 
 local FRAME_DURATION = 10 -- ms
@@ -75,15 +75,15 @@ function client.new(host, port, params)
 			late = 0,
 			lost = 0,
 			udp_packets = 0,
-			tcp_packets = 0,
+			udp_ping_acc = 0,
 			udp_ping_avg = 0,
 			udp_ping_var = 0,
+			tcp_packets = 0,
+			tcp_ping_acc = 0,
 			tcp_ping_total = 0,
 			tcp_ping_avg = 0,
 			tcp_ping_var = 0,
 		},
-		pings_tcp = 0,
-		pings_udp = 0,
 		version = {},
 		channels = {},
 		users = {},
@@ -155,10 +155,10 @@ function client:close()
 	self.tcp:close()
 	--self.udp:close()
 
-	self.onreadtcp:stop()
-	--self.onreadudp:stop()
-	self.audio_timer:stop()
-	self.ping_timer:stop()
+	self.onreadtcp:stop(ev.Loop.default)
+	--self.onreadudp:stop(ev.Loop.default)
+	self.audio_timer:stop(ev.Loop.default)
+	self.ping_timer:stop(ev.Loop.default)
 
 	if self:isSynced() then
 		self:hookCall("OnDisconnect")
@@ -223,7 +223,9 @@ function client:hook(name, desc, callback)
 end
 
 function client:hookCall(name, ...)
-	log.trace("Call hook %q", name)
+	if name ~= "OnUserStats" and name ~= "OnPing" then
+		log.trace("Call hook %q", name)
+	end
 	if not self.hooks[name] then return end
 	for desc, callback in pairs(self.hooks[name]) do
 		local succ, ret = xpcall(callback, debug.traceback, self, ...)
@@ -264,7 +266,9 @@ function client:auth(username, password, tokens)
 end
 
 function client:send(packet)
-	log.trace("Send TCP %s to server", packet)
+	if packet.id ~= 3 and packet.id ~= 22 then
+		log.trace("Send TCP %s to server", packet)
+	end
 	return self.tcp:send(packet:toString())
 end
 
@@ -283,8 +287,9 @@ function client:pingTCP()
 	ping:set("timestamp", self:getTime() * 1000)
 	ping:set("tcp_packets", self.ping.tcp_packets)
 	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
+	ping:set("tcp_ping_var", self.ping.tcp_ping_avg)
 	self:send(ping)
-	self.pings_tcp = self.pings_tcp + 1
+	self.ping.tcp_ping_acc = self.ping.tcp_ping_acc + 1
 end
 
 function client:pingUDP()
@@ -292,7 +297,7 @@ function client:pingUDP()
 	b:writeByte(bit.lshift(UDP_PING, 5))
 	--b:writeString("test")
 	self:sendUDP(b)
-	--self.pings_udp = self.pings_udp + 1
+	--self.ping.udp_ping_acc = self.ping.udp_ping_acc + 1
 end
 
 local record = io.open("data.vorbis", "wba")
@@ -342,12 +347,16 @@ function client:receiveVoiceData(packet, codec, target)
 end
 
 function client:doping()
-	if self.pings_tcp >= 3 then
+
+	-- Check if we recieved 3 or more pings without the server responding..
+	if self.ping.tcp_ping_acc >= 3 then
+		-- Disconnect from the server, since we seem to have lost connection
 		log.error("No response from server..", err)
 		self:close()
 		return false
 	end
 
+	-- Only ping if we are fully synced with the server
 	if self.synced then
 		self:pingTCP()
 		--self:pingUDP()
@@ -360,6 +369,7 @@ function client:readudp()
 	local read = true
 	local err
 
+	-- Read everything the server has sent us
 	while read do
 		read, err = self.udp:receive(100)
 		if read then
@@ -383,21 +393,23 @@ function client:readtcp()
 	local read = true
 	local err
 
+	-- Read everything the server has sent us
 	while read do
-		read, err = self.tcp:receive(6)
+		read, err = self.tcp:receive(6) -- Read the protobuf header information
 
 		if read then
 			local buff = buffer(read)
 
-			local id = buff:readShort()
-			local len = buff:readInt()
+			local id = buff:readShort() -- 2 bytes
+			local len = buff:readInt() -- 4 bytes
 			
 			if not id or not len then
 				log.warn("malformed packet: %q", read)
 			else
-				read, err = self.tcp:receive(len)
+				read, err = self.tcp:receive(len) -- Read the remaining bytes in the packet
 
 				if id == 1 then
+					-- Handle voice data
 					local voice = buffer(read)
 					local header = voice:readByte()
 
@@ -406,6 +418,7 @@ function client:readtcp()
 
 					self:receiveVoiceData(voice, codec, target)
 				else
+					-- Handle command packets
 					local packet = packet.new(id, read)
 					self:onPacket(packet)
 				end
@@ -414,6 +427,7 @@ function client:readtcp()
 		elseif err == "wantwrite" then
 		elseif err == "timeout" then
 		else
+			-- Anything else is a connection error
 			log.error("TCP connection error %q", err)
 			self:close()
 		end
@@ -448,37 +462,53 @@ end
 function client:streamAudio()
 	local biggest_pcm_size = 0
 
+	-- Reset the buffer to all 0's
 	ffi.fill(self.audio_buffer, ffi.sizeof(self.audio_buffer))
 
+	-- Loop through each channel of audio and mix them together with simple addition.
 	for channel, stream in pairs(self.audio_streams) do
+		-- Get the PCM samples for our stream
 		local pcm, pcm_size = stream:streamSamples(FRAME_DURATION, SAMPLE_RATE, CHANNELS)
 
 		if not pcm or not pcm_size or pcm_size <= 0 then
+			-- If we have no PCM data, or the size is too small, we end the audio stream
 			self.audio_streams[channel] = nil
 			self:hookCall("AudioStreamFinish", channel)
 		else
 			if pcm_size > biggest_pcm_size then
+				-- We need to save the biggest PCM data for later.
+				-- If we didn't do this, we could be cutting off some audio if one
+				-- stream ends while another is still playing.
 				biggest_pcm_size = pcm_size
 			end
 			for i=0,pcm_size-1 do
+				-- Mix all channels together in the buffer
 				self.audio_buffer[i] = self.audio_buffer[i] + pcm[i]
 			end
 		end
 	end
 
+	-- If the biggest pcm size is 0 or smaller then every stream has ended.
 	if biggest_pcm_size <= 0 then return end
 
+	-- Encode our mixed audio.
 	local encoded, encoded_len = self.encoder:encode(self.audio_buffer, FRAME_SIZE, FRAME_SIZE, 0x1FFF)
-	if not encoded or encoded_len <= 0 then self:hookCall("AudioFinish") return end
 
+	-- If nothing was encoded, stop here..
+	if not encoded or encoded_len <= 0 then return end
+
+	-- Check if the audio packet is too big.
 	if encoded_len > 8191 then
 		log.error("encoded frame too large for audio packet..", encoded_len)
 		return
 	end
 
+	-- If our longest bit of audio is smaller than the normal frame size of audio, it's the end of the stream..
 	if biggest_pcm_size < FRAME_SIZE then
-		-- Set 14th bit to 1 to signal end of stream
+		-- Set 14th bit to 1 to signal end of stream.
 		encoded_len = bor(lshift(1, 13), encoded_len)
+
+		print("DONE")
 	end
 
 	--[[if bit.band(encoded_len, 0x2000) == 0x2000 then
@@ -487,8 +517,8 @@ function client:streamAudio()
 
 	local b = self:createAudioPacket(UDP_OPUS, 0, sequence)
 
-	b:writeMumbleVarInt(encoded_len)
-	b:write(ffi.string(encoded, encoded_len))
+	b:writeMumbleVarInt(encoded_len) -- Write the length of the encoded data in the header
+	b:write(ffi.string(encoded, encoded_len)) -- Write encoded data
 
 	b:seek("set", 2)
 	b:writeInt(b.length - 6) -- Set size of payload
@@ -511,7 +541,9 @@ function client:onPacket(packet)
 		return
 	end
 
-	log.trace("received %s", packet)
+	if packet.id ~= 3 and packet.id ~= 22 then
+		log.trace("Received %s", packet)
+	end
 
 	local succ, err = xpcall(func, debug.traceback, self, packet)
 	if not succ then log.error(err) end
@@ -534,9 +566,11 @@ function client:onPing(packet)
 	local time = self:getTime() * 1000
 	local ms = (time - packet.timestamp)
 	self.ping.tcp_packets = self.ping.tcp_packets + 1
-	self.ping.tcp_ping_avg = ms
-	self.pings_tcp = self.pings_tcp - 1
-	log.trace("ping: %0.2f", ms)
+	self.ping.tcp_ping_total = self.ping.tcp_ping_total + ms
+	self.ping.tcp_ping_avg = self.ping.tcp_ping_total / self.ping.tcp_packets
+	self.ping.tcp_ping_var = math.abs(ms - self.ping.tcp_ping_avg) ^ 2
+	self.ping.tcp_ping_acc = self.ping.tcp_ping_acc - 1
+	--log.trace("Ping: %0.2f ms", ms)
 	self:hookCall("OnPing")
 end
 
@@ -772,8 +806,10 @@ end
 function client:getUser(session)
 	local tp = type(session)
 	if tp == "number" then
+		-- If the function is using a number as the argument, return user by session number
 		return self.users[session]
 	elseif tp == "string" then
+		-- If the function is using a string as the argument, return user by their name
 		for session, user in pairs(self.users) do
 			if user:getName() == session then
 				return user
@@ -787,16 +823,20 @@ function client:getChannels()
 end
 
 function client:getChannelRoot()
+	-- Channel 0 is the root channel
 	return self.channels[0]
 end
 
 function client:getChannel(index)
 	local tp = type(index)
 	if tp == "string" then
+		-- Index channel by path name, starting from the root channel.
 		return self.channels[0](index)
 	elseif tp == "number" then
+		-- Get channel by ID
 		return self.channels[index]
 	else
+		-- Fallback to root as default
 		return self.channels[0]
 	end
 end
