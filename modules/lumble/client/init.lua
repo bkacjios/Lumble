@@ -30,9 +30,9 @@ require("extensions.string")
 
 local CHANNELS = 1
 local SAMPLE_RATE = 48000
+local ENCODED_BITRATE = 96000 --57000 --41100
 
-local FRAME_DURATION = 10 -- ms
-local FRAME_SIZE = SAMPLE_RATE * FRAME_DURATION / 1000
+local DEFAULT_FRAMES = 1
 
 local UDP_CELT_ALPHA = 0
 local UDP_PING = 1
@@ -60,7 +60,7 @@ function client.new(host, port, params)
 
 	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
 	encoder:set("vbr", 0)
-	encoder:set("bitrate", 57000) --41100
+	encoder:set("bitrate", 96000)
 
 	local object = {
 		crypt = ocbaes128.new(),
@@ -108,7 +108,8 @@ function client.new(host, port, params)
 		start = socket.gettime(),
 		audio_streams = {},
 		audio_volume = 0.15,
-		audio_buffer = ffi.new('float[?]', FRAME_SIZE),
+		audio_frames = DEFAULT_FRAMES,
+		audio_buffer = ffi.new('float[?]', DEFAULT_FRAMES * SAMPLE_RATE / 100),
 	}
 
 	-- Create an event using the sockets file desciptor for when client is ready to read data
@@ -125,14 +126,6 @@ function client.new(host, port, params)
 		if not succ then log.error(err) end
 	end, udp:getfd(), ev.READ)]]
 
-	-- Get the length of our timer for the audio stream..
-	local time = FRAME_DURATION / 1000
-
-	object.audio_timer = ev.Timer.new(function()
-		local succ, err = xpcall(object.streamAudio, debug.traceback, object)
-		if not succ then log.error(err) end
-	end, time, time)
-
 	object.ping_timer = ev.Timer.new(function()
 		local succ, err = xpcall(object.doping, debug.traceback, object)
 		if not succ then log.error(err) end
@@ -141,7 +134,6 @@ function client.new(host, port, params)
 	-- Register the event
 	object.onreadtcp:start(ev.Loop.default)
 	--object.onreadudp:start(ev.Loop.default)
-	object.audio_timer:start(ev.Loop.default)
 	object.ping_timer:start(ev.Loop.default)
 
 	return setmetatable(object, client)
@@ -167,6 +159,54 @@ end
 
 function client:isSynced()
 	return self.synced
+end
+
+local function getNetworkBandwidth(bitrate, frames)
+	local overhead = 20 + 8 + 4 + 1 + 2 + 12 + frames
+	overhead = overhead * (800 / frames)
+	return overhead + bitrate
+end
+
+function client:createAudioStream(bitspersec)
+	local frames = self.audio_frames
+	local bitrate = self.encoder:get("bitrate")
+
+	if (bitspersec == -1) then
+		-- No limit
+	elseif (getNetworkBandwidth(bitrate, frames) > bitspersec) then
+		if ((frames <= 4) and (bitspersec <= 32000)) then
+			frames = 4
+		elseif ((frames == 1) and (bitspersec <= 64000)) then
+			frames = 2
+		elseif ((frames == 2) and (bitspersec <= 48000)) then
+			frames = 4
+		end
+		if (getNetworkBandwidth(bitrate, frames) > bitspersec) then
+			repeat
+				bitrate = bitrate - 1000
+			until not ((bitrate > 8000) and (getNetworkBandwidth(bitrate, frames) > bitspersec))
+		end
+	end
+	if (bitrate < 8000) then
+		bitrate = 8000
+	end
+
+	if bitrate ~= self.encoder:get("bitrate") then
+		log.debug("Server maximum network bandwidth is only %d kbit/s. Audio quality auto-adjusted to %d kbit/s (%d ms)", bitspersec / 1000, bitrate / 1000, frames * 10)
+		self.audio_frames = frames
+		self.encoder:set("bitrate", bitrate)
+		self.audio_buffer = ffi.new('float[?]', frames * SAMPLE_RATE / 100)
+	end
+
+	-- Get the length of our timer for the audio stream..
+	local time = frames / 100
+
+	self.audio_timer = ev.Timer.new(function()
+		local succ, err = xpcall(self.streamAudio, debug.traceback, self)
+		if not succ then log.error(err) end
+	end, time, time)
+
+	self.audio_timer:start(ev.Loop.default)
 end
 
 function client:createOggStream(file, volume)
@@ -470,7 +510,7 @@ function client:streamAudio()
 	-- Loop through each channel of audio and mix them together with simple addition.
 	for channel, stream in pairs(self.audio_streams) do
 		-- Get the PCM samples for our stream
-		local pcm, pcm_size = stream:streamSamples(FRAME_DURATION, SAMPLE_RATE, CHANNELS)
+		local pcm, pcm_size = stream:streamSamples(self.audio_frames * 10, SAMPLE_RATE, CHANNELS)
 
 		if not pcm or not pcm_size or pcm_size <= 0 then
 			-- If we have no PCM data, or the size is too small, we end the audio stream
@@ -493,8 +533,10 @@ function client:streamAudio()
 	-- If the biggest pcm size is 0 or smaller then every stream has ended.
 	if biggest_pcm_size <= 0 then return end
 
+	local frame_size = self.audio_frames * SAMPLE_RATE / 100
+
 	-- Encode our mixed audio.
-	local encoded, encoded_len = self.encoder:encode(self.audio_buffer, FRAME_SIZE, FRAME_SIZE, 0x1FFF)
+	local encoded, encoded_len = self.encoder:encode(self.audio_buffer, frame_size, 0x1FFF)
 
 	-- If nothing was encoded, stop here..
 	if not encoded or encoded_len <= 0 then return end
@@ -506,7 +548,7 @@ function client:streamAudio()
 	end
 
 	-- If our longest bit of audio is smaller than the normal frame size of audio, it's the end of the stream..
-	if biggest_pcm_size < FRAME_SIZE then
+	if biggest_pcm_size < frame_size then
 		-- Set 14th bit to 1 to signal end of stream.
 		encoded_len = bor(lshift(1, 13), encoded_len)
 	end
@@ -582,6 +624,9 @@ function client:onServerSync(packet)
 	self.permissions[0] = packet.permissions
 	self.session = packet.session
 	self.config.max_bandwidth = packet.max_bandwidth
+
+	self:createAudioStream(self.config.max_bandwidth)
+
 	self.me = self.users[self.session]
 	self.num_users = self.num_users + 1
 	log.info("message: %s", packet.welcome_text:stripHTML())
@@ -590,9 +635,9 @@ end
 
 function client:onChannelRemove(packet)
 	if packet.temporary then
-		log.debug("Temporary %s removed", channel)
+		log.info("Temporary channel %s removed", channel)
 	else
-		log.debug("%s removed", channel)
+		log.info("Channel %s removed", channel)
 	end
 	self:hookCall("OnChannelRemove", event.new(self, packet))
 	self.channels[packet.channel_id] = nil
@@ -604,15 +649,15 @@ function client:onChannelState(packet)
 		self.channels[packet.channel_id] = channel
 		if self.synced then
 			if packet.temporary then
-				log.debug("Temporary %s created", channel)
+				log.info("Temporary channel %s created", channel)
 			else
-				log.debug("%s created", channel)
+				log.info("Channel %s created", channel)
 			end
 			self:hookCall("OnChannelCreated", event.new(self, packet))
 		end
 	else
 		local channel = self.channels[packet.channel_id]
-		log.debug("%s updated", channel)
+		log.info("Channel %s updated", channel)
 		channel:update(packet)
 	end
 	self:hookCall("OnChannelState", event.new(self, packet))
@@ -649,7 +694,7 @@ function client:onUserState(packet)
 		evnt = event.new(self, packet, true)
 
 		if self.synced then
-			log.info("%s connected", user)
+			--log.info("%s connected", user)
 			self:hookCall("OnUserConnected", evnt)
 		end
 	else
@@ -664,9 +709,9 @@ function client:onUserState(packet)
 		user.channel_id_prev = user.channel_id
 
 		if evnt.actor ~= user then
-			log.debug("%s moved to %s by %s", user, evnt.channel, evnt.actor)
+			log.info("%s moved to %s by %s", user, evnt.channel, evnt.actor)
 		else
-			log.debug("%s moved to %s", user, evnt.channel)
+			log.info("%s moved to %s", user, evnt.channel)
 		end
 
 		self:hookCall("OnUserChannel", evnt)
@@ -778,7 +823,7 @@ function client:onPermissionQuery(packet)
 	self.permissions[packet.channel_id] = packet.permissions
 
 	local channel = self:getChannel(packet.channel_id)
-	log.debug("Permissions for %s updated: %d", channel, packet.permissions)
+	log.trace("Permissions for %s updated: %d", channel, packet.permissions)
 
 	self:hookCall("OnPermissionQuery", self.permissions)
 end
@@ -786,11 +831,11 @@ end
 function client:hasPermission(channel, flag)
 	local channel_id = channel:getID()
 
-	if not self.permissions[channel_id] then
+	--[[if not self.permissions[channel_id] then
 		local query = packet.new("PermissionQuery")
 		query:set("channel_id", channel_id)
 		self:send(query)
-	end
+	end]]
 
 	return bit.band(self.permissions[channel_id] or 0, flag) > 0
 end

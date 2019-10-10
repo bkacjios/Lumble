@@ -20,7 +20,7 @@ function channel:update(packet)
 end
 
 function channel:__tostring()
-	return ("%q"):format(self.name)
+	return ("\27[38;5;208m%s\27[0m"):format(self.name)
 end
 
 function channel:__call(path)

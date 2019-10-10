@@ -31,7 +31,7 @@ function user:update(packet)
 end
 
 function user:__tostring()
-	return self.name
+	return ("\27[1;32m%s\27[0m"):format(self.name)
 end
 
 function user:updateStats(packet)
@@ -63,7 +63,7 @@ function user:updateStats(packet)
 			end
 			if address then
 				self.stats[desc.name].string = address
-				log.info("%s[%d] connected from %s", self.name, self:getID(), address)
+				log.info("%s connected from %s", self, address)
 			end
 		else
 			self.stats[desc.name] = value
@@ -155,7 +155,7 @@ function user:requestStats(detailed)
 
 	local msg = packet.new("UserStats")
 	msg:set("session", self.session)
-	msg:set("stats_only", not detailed or not root:hasPermission(permission.REGISTER) or not chan:hasPermission(permission.ENTER))
+	msg:set("stats_only", not detailed or not root:hasPermission(permission.REGISTER)) -- or not chan:hasPermission(permission.ENTER)
 	self:send(msg)
 end
 

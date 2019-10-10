@@ -21,7 +21,7 @@ function afk.checkStats(client, event)
 
 	if idle > config.afk.movetime * 60 then
 		user:move(afkchannel)
-		log.info("%s moved to %s", user, afkchannel)
+		--log.info("%s moved to %s", user, afkchannel)
 	elseif idle > (config.afk.movetime * 60) - (config.afk.warning * 60) then
 		if not user.warned then
 			local message = config.afk.warningmessage:format(math.SecondsToHuman(idle), afkchannel:getName(), math.SecondsToHuman((config.afk.movetime * 60) - idle))

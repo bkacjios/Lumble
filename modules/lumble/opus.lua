@@ -92,7 +92,7 @@ function Encoder:__new(sample_rate, channels, app)
 	return state
 end
 
-function Encoder:encode(input, input_len, frame_size, max_data_bytes)
+function Encoder:encode(input, input_len, max_data_bytes)
 	local data = new("unsigned char[?]", max_data_bytes)
 	local ret = lib.opus_encode_float(self, input, input_len, data, max_data_bytes)
 	if ret < 0 then return throw(ret) end
@@ -110,7 +110,7 @@ function Encoder:set(name, value)
 end
 
 function Encoder:get(name)
-	local id = encoder_set[name]
+	local id = encoder_get[name]
 	if not id then return error("invalid get name '" .. name .. "'") end
 	local ret = opus_int32_ptr()
 	lib.opus_encoder_ctl(self, id, ret)
