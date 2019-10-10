@@ -1,6 +1,7 @@
 local user = {}
 user.__index = user
 
+local permission = require("lumble.permission").enum
 local packet = require("lumble.packet")
 local util = require("util")
 local config = require("config")
@@ -23,8 +24,14 @@ function user.new(client, packet)
 	return user
 end
 
+function user:update(packet)
+	for desc, value in packet:list() do
+		self[desc.name] = value
+	end
+end
+
 function user:__tostring()
-	return ("%s[%d][%s]"):format(self.name, self.session, self:getID() == 0 and "Unregistered" or "Registered")
+	return self.name
 end
 
 function user:updateStats(packet)
@@ -142,15 +149,18 @@ function user:move(channel)
 	self:send(msg)
 end
 
-function user:requestStats(stats_only)
+function user:requestStats(detailed)
+	local root = self.client.channels[0]
+	local chan = self:getChannel()
+
 	local msg = packet.new("UserStats")
 	msg:set("session", self.session)
-	msg:set("stats_only", stats_only and true or false)
+	msg:set("stats_only", not detailed or not root:hasPermission(permission.REGISTER) or not chan:hasPermission(permission.ENTER))
 	self:send(msg)
 end
 
 function user:getChannel(path)
-	return self.client.channels[self.channel_id or 0](path)
+	return self.client.channels[self.channel_id](path)
 end
 
 function user:getPreviousChannel(path)

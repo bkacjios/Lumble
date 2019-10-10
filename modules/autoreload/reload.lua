@@ -20,7 +20,7 @@ local function findloader(name)
 			table.insert(msg, f)
 		end
 	end
-	error(string.format("module '%s' not found:%s", name, table.concat(msg)))
+	error(string.format("module '%s' not found: %s", name, table.concat(msg)))
 end
 
 local global_mt = {

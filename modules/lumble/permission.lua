@@ -77,7 +77,7 @@ function permission.getName(id)
 	return permission.enum_name[id] or "Unknown"
 end
 
-function permission.getTypeName(id)
+function permission.getType(id)
 	return permission.type_name[id] or "NONE"
 end
 

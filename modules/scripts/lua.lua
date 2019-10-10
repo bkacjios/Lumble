@@ -100,7 +100,7 @@ local function sandbox(user, func)
 		print = function(...)
 			local txts = {}
 			for i=1, select("#", ...) do
-				table.insert(txts, tostring(select(i, ...)))
+				txts[i] = tostring(select(i, ...))
 			end
 			user:message(table.concat(txts, ", "))
 		end,

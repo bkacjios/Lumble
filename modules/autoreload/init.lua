@@ -27,7 +27,7 @@ function autoreload.poll()
 					local status, err = reload.reload(module)
 					if status then
 						info.crc = crc
-						log.debug("%s[%q] reloaded: %s", module, info.file, crc)
+						log.debug("%s[%q] reloaded: %X", module, info.file, crc)
 					else
 						log.error("%s[%q] reload failed: %s", module, info.file, err)
 					end

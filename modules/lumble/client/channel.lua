@@ -15,15 +15,12 @@ end
 
 function channel:update(packet)
 	for desc, value in packet:list() do
-		local name = desc.name
-		if self[name] ~= value then
-			self[name] = value
-		end
+		self[desc.name] = value
 	end
 end
 
 function channel:__tostring()
-	return ("channel[%d][%s]"):format(self.channel_id, self.name)
+	return ("%q"):format(self.name)
 end
 
 function channel:__call(path)

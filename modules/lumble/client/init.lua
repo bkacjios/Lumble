@@ -28,7 +28,7 @@ local ocbaes128 = require("ocb.aes128")
 
 require("extensions.string")
 
-local CHANNELS = 2
+local CHANNELS = 1
 local SAMPLE_RATE = 48000
 
 local FRAME_DURATION = 10 -- ms
@@ -223,8 +223,12 @@ function client:hook(name, desc, callback)
 end
 
 function client:hookCall(name, ...)
-	if name ~= "OnUserStats" and name ~= "OnPing" then
-		log.trace("Call hook %q", name)
+	if log.level == "trace" then
+		local args = {}
+		for i=1, select("#", ...) do
+			args[i] = tostring(select(i, ...))
+		end
+		log.trace("Call hook %s(%s)", name, table.concat(args, ", "))
 	end
 	if not self.hooks[name] then return end
 	for desc, callback in pairs(self.hooks[name]) do
@@ -266,9 +270,7 @@ function client:auth(username, password, tokens)
 end
 
 function client:send(packet)
-	if packet.id ~= 3 and packet.id ~= 22 then
-		log.trace("Send TCP %s to server", packet)
-	end
+	log.trace("Send TCP %s to server", packet)
 	return self.tcp:send(packet:toString())
 end
 
@@ -507,8 +509,6 @@ function client:streamAudio()
 	if biggest_pcm_size < FRAME_SIZE then
 		-- Set 14th bit to 1 to signal end of stream.
 		encoded_len = bor(lshift(1, 13), encoded_len)
-
-		print("DONE")
 	end
 
 	--[[if bit.band(encoded_len, 0x2000) == 0x2000 then
@@ -541,9 +541,7 @@ function client:onPacket(packet)
 		return
 	end
 
-	if packet.id ~= 3 and packet.id ~= 22 then
-		log.trace("Received %s", packet)
-	end
+	log.trace("Received %s", packet)
 
 	local succ, err = xpcall(func, debug.traceback, self, packet)
 	if not succ then log.error(err) end
@@ -571,7 +569,7 @@ function client:onPing(packet)
 	self.ping.tcp_ping_var = math.abs(ms - self.ping.tcp_ping_avg) ^ 2
 	self.ping.tcp_ping_acc = self.ping.tcp_ping_acc - 1
 	--log.trace("Ping: %0.2f ms", ms)
-	self:hookCall("OnPing")
+	self:hookCall("OnPing", ms)
 end
 
 function client:onReject(packet)
@@ -591,18 +589,30 @@ function client:onServerSync(packet)
 end
 
 function client:onChannelRemove(packet)
+	if packet.temporary then
+		log.debug("Temporary %s removed", channel)
+	else
+		log.debug("%s removed", channel)
+	end
 	self:hookCall("OnChannelRemove", event.new(self, packet))
 	self.channels[packet.channel_id] = nil
 end
 
 function client:onChannelState(packet)
 	if not self.channels[packet.channel_id] then
-		self.channels[packet.channel_id] = channel.new(self, packet)
+		local channel = channel.new(self, packet)
+		self.channels[packet.channel_id] = channel
 		if self.synced then
+			if packet.temporary then
+				log.debug("Temporary %s created", channel)
+			else
+				log.debug("%s created", channel)
+			end
 			self:hookCall("OnChannelCreated", event.new(self, packet))
 		end
 	else
 		local channel = self.channels[packet.channel_id]
+		log.debug("%s updated", channel)
 		channel:update(packet)
 	end
 	self:hookCall("OnChannelState", event.new(self, packet))
@@ -634,7 +644,7 @@ function client:onUserState(packet)
 		user = cuser.new(self, packet)
 		self.users[packet.session] = user
 		self.num_users = self.num_users + 1
-		user:requestStats()
+		user:requestStats(true)
 
 		evnt = event.new(self, packet, true)
 
@@ -648,18 +658,21 @@ function client:onUserState(packet)
 	end
 
 	local channel = user:getChannel()
+
 	if evnt.channel and evnt.channel ~= channel then
 		evnt.channel_prev = channel
 		user.channel_id_prev = user.channel_id
+
+		if evnt.actor ~= user then
+			log.debug("%s moved to %s by %s", user, evnt.channel, evnt.actor)
+		else
+			log.debug("%s moved to %s", user, evnt.channel)
+		end
+
 		self:hookCall("OnUserChannel", evnt)
 	end
 
-	for desc, value in packet:list() do
-		local name = desc.name
-		if user[name] ~= value then
-			user[name] = value
-		end
-	end
+	user:update(packet)
 
 	self:hookCall("OnUserState", evnt)
 end
@@ -704,7 +717,7 @@ function client:onPermissionDenied(packet)
 	if packet.type == permission.type.Permission then
 		log.warn("PermissionDenied: %s", permission.getName(packet.id))
 	else
-		log.warn("PermissionDenied: %s", permission.getTypeName(packet.type))
+		log.warn("PermissionDenied: %s", permission.getType(packet.type))
 	end
 	self:hookCall("OnPermissionDenied")
 end
@@ -761,12 +774,25 @@ function client:onPermissionQuery(packet)
 	if packet.flush then
 		self.permissions = {}
 	end
+
 	self.permissions[packet.channel_id] = packet.permissions
+
+	local channel = self:getChannel(packet.channel_id)
+	log.debug("Permissions for %s updated: %d", channel, packet.permissions)
+
 	self:hookCall("OnPermissionQuery", self.permissions)
 end
 
 function client:hasPermission(channel, flag)
-	return bit.band(self.permissions[channel:getID()], flag) > 0
+	local channel_id = channel:getID()
+
+	if not self.permissions[channel_id] then
+		local query = packet.new("PermissionQuery")
+		query:set("channel_id", channel_id)
+		self:send(query)
+	end
+
+	return bit.band(self.permissions[channel_id] or 0, flag) > 0
 end
 
 function client:onCodecVersion(packet)

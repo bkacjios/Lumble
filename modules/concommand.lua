@@ -72,9 +72,16 @@ end, "Show server statuses")
 
 local function printTree(branch, tabs)
 	tabs = tabs or 0
-	print(("%s%3i - %s (%i)"):format(("\t"):rep(tabs), branch:getID(), branch:getName(), table.Count(branch:getUsers())))
 
-	for k,user in UserPairs(branch:getUsers()) do
+	local users, num_users = branch:getUsers()
+
+	if num_users > 0 then
+		print(("%s%3i - %s (%i)"):format(("\t"):rep(tabs), branch:getID(), branch:getName(), num_users))
+	else
+		print(("%s%3i - %s"):format(("\t"):rep(tabs), branch:getID(), branch:getName()))
+	end
+
+	for k,user in UserPairs(users) do
 		print(("%s%3i - %s"):format(("\t"):rep(tabs + 1), user:getID(), user:getName()))
 	end
 
