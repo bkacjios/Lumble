@@ -3,3 +3,4 @@ config/dongerbot.pem
 *.ogg
 data.vorbis
 test.lua
+error.log

@@ -1,6 +1,9 @@
 local lfs = require("lfs")
 
-lfs.chdir(arg[0]:match("^(.*[/\\])[^/\\]-$"))
+local wd = arg[0]:match("^(.*[/\\])[^/\\]-$")
+if wd then
+	lfs.chdir(wd)
+end
 
 package.path = package.path .. ';./modules/?.lua;./modules/?/init.lua'
 

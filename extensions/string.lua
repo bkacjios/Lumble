@@ -105,6 +105,10 @@ function string.stripHTML(str)
 	return stripped
 end
 
+function string.stripANSI(str)
+	return gsub(str, "[\27\155][][()#;?%d]*[A-PRZcf-ntqry=><~]", "")
+end
+
 function string.parseArgs(line)
 	local cmd, val = line:match("(%S-)%s-=%s+(.+)")
 	if cmd and val then

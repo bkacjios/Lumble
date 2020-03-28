@@ -37,7 +37,7 @@ end
 
 function afk.queryUsers(client)
 	for k,user in pairs(client:getUsers()) do
-		user:requestStats(true)
+		user:requestStats(false)
 	end
 end
 

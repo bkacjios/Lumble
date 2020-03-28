@@ -102,7 +102,7 @@ local function sandbox(user, func)
 			for i=1, select("#", ...) do
 				txts[i] = tostring(select(i, ...))
 			end
-			user:message(table.concat(txts, ", "))
+			user:message(string.stripANSI(table.concat(txts, ", ")))
 		end,
 		me = user,
 		bot = user:getClient().me,
@@ -139,6 +139,7 @@ function lua.run(client, event)
 		debug.sethook(timeout, "", quota)
 
 		local status, err = pcall(lua)
+
 		if not status then
 			log.warn("%s runtime error: (%s)", user, err)
 			user:message("runtime error: %s", err:escapeHTML())

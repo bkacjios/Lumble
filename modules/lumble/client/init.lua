@@ -19,7 +19,7 @@ local util = require("util")
 local bit = require("bit")
 local ffi = require("ffi")
 local ev = require("ev")
---local copas = require("copas")
+
 local socket = require("socket")
 
 local stream = require("lumble.client.audiostream")
@@ -149,8 +149,10 @@ function client:close()
 
 	self.onreadtcp:stop(ev.Loop.default)
 	--self.onreadudp:stop(ev.Loop.default)
-	self.audio_timer:stop(ev.Loop.default)
 	self.ping_timer:stop(ev.Loop.default)
+	if self.audio_timer then
+		self.audio_timer:stop(ev.Loop.default)
+	end
 
 	if self:isSynced() then
 		self:hookCall("OnDisconnect")
@@ -316,8 +318,7 @@ end
 
 function client:sendUDP(packet)
 	log.trace("Send UDP %s to server", packet)
-	local encryped = self.crypt:encrypt(packet:toString())
-	return self.udp:send(encryped)
+	return self.udp:send(self.crypt:encrypt(packet:toString()))
 end
 
 function client:getTime()
@@ -337,9 +338,11 @@ end
 function client:pingUDP()
 	local b = buffer()
 	b:writeByte(bit.lshift(UDP_PING, 5))
-	--b:writeString("test")
+	b:writeMumbleVarInt(self:getTime() * 1000)
 	self:sendUDP(b)
-	--self.ping.udp_ping_acc = self.ping.udp_ping_acc + 1
+	self.ping.udp_ping_acc = self.ping.udp_ping_acc + 1
+
+	self:readudp()
 end
 
 local record = io.open("data.vorbis", "wba")
@@ -413,7 +416,10 @@ function client:readudp()
 
 	-- Read everything the server has sent us
 	while read do
-		read, err = self.udp:receive(100)
+		read, err = self.udp:receive(1)
+
+		print(read, err)
+
 		if read then
 			local b = buffer(read)
 
@@ -620,7 +626,7 @@ function client:onReject(packet)
 end
 
 function client:onServerSync(packet)
-	self.synced = true
+
 	self.permissions[0] = packet.permissions
 	self.session = packet.session
 	self.config.max_bandwidth = packet.max_bandwidth
@@ -630,6 +636,13 @@ function client:onServerSync(packet)
 	self.me = self.users[self.session]
 	self.num_users = self.num_users + 1
 	log.info("message: %s", packet.welcome_text:stripHTML())
+
+	for session, user in pairs(self:getUsers()) do
+		user:requestStats(true)
+	end
+	
+	self.synced = true
+
 	self:hookCall("OnServerSync", self.me)
 end
 
@@ -794,6 +807,11 @@ function client:onCryptSetup(packet)
 		self.crypt:setDecryptIV(packet.server_nonce)
 	else
 
+	end
+
+	if self.crypt:isValid() then
+		log.debug("Successfully setup crypt state")
+		--self:pingUDP()
 	end
 	
 	self:hookCall("OnCryptSetup")

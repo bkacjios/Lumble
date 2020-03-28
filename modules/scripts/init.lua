@@ -22,29 +22,29 @@ local client = mumble.getClient("::1", 64738, params)
 if not client then return end 
 client:auth("LuaBot", "dix", {"dnd", "hedoesntevenknow", })
 
---[[client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
+client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
 	if event.channel ~= client.me:getChannel() then return end
 
 	local day = tonumber(os.date("%w"))
 	local hour = tonumber(os.date("%H"))
 	local minute = tonumber(os.date("%M"))
 
-	if day == 4 then
-		if hour >= 18 and hour <= 19 then
-			if hour == 18 and 59-minute > 0 then
-				client.me:getChannel():message("%s is %d minutes early for DND", event.user:getName(), 59-minute)
-			elseif hour == 19 and minute > 0 then
-				client.me:getChannel():message("%s is %d minutes late for DND", event.user:getName(), minute)
-			end
+	if day == 2 then
+		if hour == 18 then
+			client.me:getChannel():message("%s is %d minutes early for DND", event.user:getName(), 59-minute)
+		elseif hour == 19 then
+			client.me:getChannel():message("%s is %d minutes late for DND", event.user:getName(), minute)
 		end
 	end
-end)]]
+end)
 
 client:hook("OnUserChannel", "LuaBot - OS Channels", function(client, event)
 	local linux = client:getChannel("Linux")
 	local windows = client:getChannel("Windows")
 
 	local os_version = event.user:getStats()["version"]["os_version"]
+
+	if event.user == client.me then return end
 
 	if (event.channel == linux and not string.find(os_version:lower(), "linux", 1, true)) or 
 		(event.channel == windows and not string.find(os_version:lower(), "win", 1, true)) then
@@ -164,13 +164,24 @@ client:addCommand("math", function(client, user, cmd, args, raw)
 	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
 
-local name_convert = {
+--[[local name_convert = {
 	["Amer"] = "Sancho",
 	["Aetsu"] = "Drak",
 	["Bkacjios"] = "Bhord",
 	["Paste"] = "Ranger Rick",
 	["Will"] = "Hrangus",
 	["NewDale"] = "Elph",
+}]]
+
+local name_convert = {
+	["Amer"] = "Zaid",
+	["Aetsu"] = "Torge",
+	["Bkacjios"] = "Kilmos",
+	["Paste"] = "Danger Rick",
+	["Will"] = "Gug",
+	["NewDale"] = "Alph",
+	["davey"] = "Coughertwo",
+	["Henricos"] = "Gørf",
 }
 
 local card_suites = {
@@ -437,7 +448,7 @@ local inititive = {
 	["Sancho"] = 5,
 	["Drak"] = 4,
 	["Bhord"] = 1,
-	["Ranger Rick"] = 5,
+	["Danger Rick"] = 5,
 	["Hrangus"] = 1,
 }
 
@@ -457,7 +468,7 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 		end
 		message = message .. "</ol>"
 
-		if name == "Orange-Tang" then
+		if name == "James" then
 			--rolled_initiatives = {}
 			--did_roll = {}
 			user:getChannel():message(message)
@@ -466,7 +477,7 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 		end
 		return
 	elseif args[1] == "clear" then
-		if name == "Orange-Tang" then
+		if name == "James" then
 			rolled_initiatives = {}
 			did_roll = {}
 			user:message("Initiative list cleared")
@@ -481,7 +492,8 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 		return
 	end
 	did_roll[name] = true
-	local bonus = (inititive[name] or 0)
+	--local bonus = (inititive[name] or 0)
+	local bonus = tonumber(args[1]) or 0
 	local message = string.format("<p><b>%s</b> rolled a <b><span style=\"color:#3377ff\">%d</span></b> (%d + %d) initiative", name, total + bonus, total, bonus)
 	table.insert(rolled_initiatives, {name = name, roll = total, bonus = bonus})
 	table.sort(rolled_initiatives, function(a, b) return a.roll + a.bonus > b.roll + b.bonus end)
@@ -489,7 +501,7 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 	client:playOgg(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)), 3, 0.5)
 
 	user:getChannel():message(message)
-end):setHelp("Roll for initiative"):setUsage("[clear, list]"):alias("init")
+end):setHelp("Roll for initiative"):setUsage("[clear, list, initiative bonus]"):alias("init")
 
 local advantage_shortcuts = {
 	"advantage",

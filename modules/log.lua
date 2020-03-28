@@ -10,6 +10,7 @@ local log = {
 	color = jit.os == "Linux",
 	date = "%H:%M:%S",
 	level = "debug",
+	errorfile = io.open("error.log", "a")
 }
 
 function log.setColor(b)
@@ -40,6 +41,11 @@ for level, cfg in ipairs(log.levels) do
 			message = format("[%s%-5s\27[0m - \27[2m%s\27[0m] %s", cfg.color, upname, date, text)
 		else
 			message = format("[%-5s - %s] %s", upname, date, text)
+		end
+
+		if log.errorfile and log[upname] >= log["ERROR"] then
+			-- Escape any possible ANSI color characters and write the plain text to the errorfile
+			log.errorfile:write(string.stripANSI(message) .. "\n")
 		end
 
 		print(message)

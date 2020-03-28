@@ -15,6 +15,7 @@ function user.new(client, packet)
 		stats = {},
 		channel_id = 0,
 		channel_id_prev = 0,
+		synced = false,
 	}, user)
 
 	for desc, value in packet:list() do
@@ -63,7 +64,14 @@ function user:updateStats(packet)
 			end
 			if address then
 				self.stats[desc.name].string = address
-				log.info("%s connected from %s", self, address)
+				
+				if self.synced then
+					-- Only print if requestStats was called AFTER the server was fully synced
+					log.info("%s connected from %s", self, address)
+				end
+
+				-- Synced will only be false for the very first updateStats
+				self.synced = true
 			end
 		else
 			self.stats[desc.name] = value
