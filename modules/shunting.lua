@@ -503,7 +503,7 @@ end
 function math.infix_to_string(node, infunc)
 	if not node then return "" end
 	if node.kind == "number" then
-		return node.value
+		return tostring(node.value)
 	elseif node.kind == "function" then
 		local str = node.func .. '('
 		for k,arg in pairs(node.args) do
@@ -603,6 +603,7 @@ local expression = "1 + 1 - 1 - 1 * 2 - 3 ^ 4 / 5 / 2 * 2 + 6 - 7"
 local expression = "(6-1)! + 0! + -1/5^2"
 local expression = "6-1x0+2÷2+π"
 local expression = "220 / 6 + 30 + "
+local expression = -(6+2*2/3)
 
 local stack, err = math.postfix(expression)
 
