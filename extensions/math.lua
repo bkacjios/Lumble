@@ -48,7 +48,7 @@ function math.SecondsToHuman(sec, accuracy)
 	if diff.min >= 1 then
 		table.insert(results, diff.min .. string.Plural(" minute", diff.min))
 	end
-	if diff.sec >= 1 then
+	if diff.sec >= 0 then
 		table.insert(results, diff.sec.. string.Plural(" second", diff.sec))
 	end
 	

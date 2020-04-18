@@ -27,6 +27,10 @@ function channel:__call(path)
 	return self:get(path)
 end
 
+function channel:getURL()
+	return string.format("<a href='channelid://%d' class='log-channel'>%s</a>", self.channel_id, self.name)
+end
+
 function channel:get(path)
 	if path == nil then
 		return self
@@ -131,6 +135,14 @@ end
 
 function channel:getID()
 	return self.channel_id
+end
+
+function channel:isRoot()
+	return self == self.client.channels[0]
+end
+
+function channel:getParentID()
+	return self.parent or 0
 end
 
 function channel:getParent(noroot)

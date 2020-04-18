@@ -749,20 +749,21 @@ function client:onTextMessage(packet)
 		local args = msg:parseArgs()
 		local cmd = table.remove(args,1):lower()
 		local info = self.commands[cmd:sub(2)]
+		local public = event.channel ~= nil or event.channels ~= nil
 		
 		if info then
 			if info.master and not user:isMaster() then
 				log.warn("%s: %s (PERMISSION DENIED)", user, msg)
 				user:message("permission denied: %s", cmd)
 			else
-				local suc, err = pcall(info.callback, self, user, cmd, args, msg)
+				local suc, err = pcall(info.callback, self, user, cmd, args, msg, public)
 				if not suc then
 					log.error("%s: %s (%q)", user, msg, err)
 					user:message("congrats, you broke the <b>%s</b> command", cmd)
 				end
 			end
 		else
-			log.info("%s: %s (unknown Command)", user, msg)
+			log.info("%s: %s (unknown command)", user, msg)
 			user:message("unknown command: <b>%s</b>", cmd)
 		end
 		return

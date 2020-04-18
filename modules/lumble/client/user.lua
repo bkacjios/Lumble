@@ -64,14 +64,7 @@ function user:updateStats(packet)
 			end
 			if address then
 				self.stats[desc.name].string = address
-				
-				if self.synced then
-					-- Only print if requestStats was called AFTER the server was fully synced
-					log.info("%s connected from %s", self, address)
-				end
-
-				-- Synced will only be false for the very first updateStats
-				self.synced = true
+				log.info("%s connected from %s", self, address)
 			end
 		else
 			self.stats[desc.name] = value
@@ -117,10 +110,17 @@ function user:setSelfDeafened(bool)
 	self:send(msg)
 end
 
+function user:getURL()
+	return string.format("<a href='clientid://%s' class='log-user log-source'>%s</a>", self.hash, self.name)
+end
+
 function user:message(text, ...)
+	local nargs = select("#", ...)
 	text = text or ""
-	text = text:format(...)
-	if #text > self.client.config.message_length and self.client.config.message_length > 0 then
+	if nargs > 0 then
+		text = text:format(...)
+	end
+	if self.client.config.message_length > 0 and #text > self.client.config.message_length then
 		text = string.ellipse(text, self.client.config.message_length)
 	end
 	local msg = packet.new("TextMessage")

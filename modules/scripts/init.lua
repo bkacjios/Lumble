@@ -84,7 +84,7 @@ client:hook("OnUserState", "Alone Checker", function(client, event)
 	if not client:isSynced() then return end
 
 	local users, num_users = client.me:getChannel():getUsers()
-
+	
 	if num_users <= 1 then
 		local party = findMostPopularChannel()
 		if party then
@@ -562,6 +562,9 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	local node = math.postfix_to_infix(stack)
 	local equation = math.infix_to_string(node)
 	local total = math.solve_postfix(stack)
+	local highest = -math.huge
+	local lowest = math.huge
+	local average = 0
 
 	local username = user:getName()
 	local name = name_convert[username] or username
@@ -581,6 +584,12 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 		for dice, results in pairs(rolls) do
 			local roll_list = ""
 			for k, roll in pairs(results) do
+
+				average = average + (roll/dice)
+
+				if roll > highest then highest = roll end
+				if roll < lowest then lowest = roll end
+
 				if dice == roll then
 					roll_list = roll_list .. "<b><span style=\"color:#00aa00\">" .. roll .. "</span></b>"
 				elseif roll == 1 then
@@ -595,8 +604,9 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 			message = message .. ("\n<tr><td><b>D%d Rolls</b></td><td>: %s</td></tr>"):format(dice, roll_list)
 		end
 
+		message = message .. ("\n<tr><td><b>Average</b></td><td>: %s%%%%</td></tr>"):format(math.round(average/num_rolls*100, 2))
 		message = message .. ("\n<tr><td><b>Equation</b></td><td>: %s</td></tr>"):format(equation:gsub("%%", "%%%%"))
-		message = message .. ("\n<tr><td><b>Solution</b></td><td>: %s</td></tr>"):format(total)
+		message = message .. ("\n<tr><td><b>Total</b></td><td>: <b><span style=\"color:%s\">%s</span></b></td></tr>"):format(color, total)
 
 		message = message .. "</table>"
 	end
@@ -694,6 +704,33 @@ client:addCommand("snap", function(client, user, cmd, args)
 
 	channel:message(message .. "<br> were killed")
 end):setHelp("thanos snap")
+
+local function printIdleChannelTree(branch)
+	local message = ""
+
+	local users, usern = branch:getUsers()
+	if usern > 0 then
+		message = message .. ("\n<tr><th colspan='2'>%s</th></tr>"):format(branch:getURL())
+		for k, user in UserPairs(users) do
+			message = message .. ("\n<tr><td>%s</b></td><td>: %s</td></tr>"):format(user:getURL(), math.SecondsToHuman(user.stats.idlesecs or 0))
+		end
+	end
+
+	for id, channel in ChannelPairs(branch:getChildren()) do
+		message = message .. printIdleChannelTree(channel)
+	end
+
+	return message
+end
+
+client:addCommand("idle", function(client, user, cmd, args, raw, public)
+	local message = "<table>" .. printIdleChannelTree(client:getChannelRoot(), message) .. "</table>"
+	if public then
+		user:getChannel():message(message)
+	else
+		user:message(message)
+	end
+end):setHelp("Print everyones idle statistics")
 
 client:addCommand("help", function(client, user, cmd, args, raw)
 	local message = "<table><tr><th>command</th><th>arguments</th><th>help</th></tr>"
@@ -883,6 +920,18 @@ client:addCommand("afk", function(client, user, cmd, args, raw)
 
 	user:move(afkchannel)
 end):setHelp("Make the bot move you to the AFK channel")
+
+client:addCommand("tts", function(client, user, cmd, args, raw)
+	local str = raw:sub(#cmd+2)
+
+	local f = io.open("tts.txt", "w")
+	f:write("[:phone on]" .. str)
+	f:close()
+
+	os.execute("LD_LIBRARY_PATH=:/usr/local/lib padsp say -fi tts.txt -fo > /dev/null")
+	os.execute("oggenc --quiet --resample 48000 -o tts.ogg dtmemory.wav")
+	client:playOgg("tts.ogg", 1, 1)
+end)
 
 local json = require("json")
 local https = require("ssl.https")
