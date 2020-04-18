@@ -459,7 +459,7 @@ local function needParensOnLeft(node)
 end
 
 local function needParensOnRight(node)
-	if node.right.kind == "number" or node.right.kind == "unary" or node.right.kind == "function" then
+	if node.right.kind == "number" or node.right.kind == "function" then
 		return false
 	end
 	if node.operator == "+" or node.operator == "*" then
@@ -525,13 +525,18 @@ function math.infix_to_string(node, infunc)
 			else
 				val = math.infix_to_string(node.node) .. node.operator
 			end
+			if infunc then
+				return val
+			end
+			return '(' .. val .. ')'
 		else
-			val = node.operator .. math.infix_to_string(node.node)
-		end
-		if infunc then
+			if node.node.kind == "number" then
+				val = node.operator .. math.infix_to_string(node.node)
+			else
+				val = node.operator .. '(' .. math.infix_to_string(node.node) .. ')'
+			end
 			return val
 		end
-		return '(' .. val .. ')'
 	end
 	local lhs = math.infix_to_string(node.left)
 	if needParensOnLeft(node) then

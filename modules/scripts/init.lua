@@ -161,7 +161,7 @@ client:addCommand("math", function(client, user, cmd, args, raw)
 	local equation = math.infix_to_string(node)
 	local total = math.solve_postfix(stack)
 
-	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation, total))
+	user:getChannel():message(string.format("<table><tr><td><b>Equation</b></td><td>: %s</td></tr><tr><td><b>Solution</b></td><td>: %s</td></tr></table>", equation:gsub("%%", "%%%%"), total))
 end):setHelp("Calculate a mathematical expression"):setUsage("<expression>")
 
 --[[local name_convert = {
@@ -923,14 +923,9 @@ end):setHelp("Make the bot move you to the AFK channel")
 
 client:addCommand("tts", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
-
-	local f = io.open("tts.txt", "w")
-	f:write("[:phone on]" .. str)
-	f:close()
-
-	os.execute("LD_LIBRARY_PATH=:/usr/local/lib padsp say -fi tts.txt -fo > /dev/null")
-	os.execute("oggenc --quiet --resample 48000 -o tts.ogg dtmemory.wav")
-	client:playOgg("tts.ogg", 1, 1)
+	os.execute(string.format("LD_LIBRARY_PATH=:/usr/local/lib ./say_linux -w tts.wav %q", "[:phone on]" .. str)) -- > /dev/null
+	os.execute(("oggenc --quiet --resample 48000 -o tts/%s.ogg tts.wav"):format(user.hash))
+	client:playOgg(("tts/%s.ogg"):format(user.hash), user.session + 100, 1)
 end)
 
 local json = require("json")

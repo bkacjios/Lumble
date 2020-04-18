@@ -1,7 +1,7 @@
 math.randomseed(os.time())
 
 function math.roll(dice, num)
-	local results = {}
+	local results = {0}
 	local total = 0
 
 	for i=1, num or 1 do
