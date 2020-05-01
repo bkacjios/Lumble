@@ -109,7 +109,7 @@ function client.new(host, port, params)
 		audio_streams = {},
 		audio_volume = 0.15,
 		audio_frames = DEFAULT_FRAMES,
-		audio_buffer = ffi.new('float[?]', DEFAULT_FRAMES * SAMPLE_RATE / 100),
+		audio_buffer = ffi.new('short[?]', DEFAULT_FRAMES * SAMPLE_RATE / 100),
 	}
 
 	-- Create an event using the sockets file desciptor for when client is ready to read data
@@ -197,7 +197,7 @@ function client:createAudioStream(bitspersec)
 		log.debug("Server maximum network bandwidth is only %d kbit/s. Audio quality auto-adjusted to %d kbit/s (%d ms)", bitspersec / 1000, bitrate / 1000, frames * 10)
 		self.audio_frames = frames
 		self.encoder:set("bitrate", bitrate)
-		self.audio_buffer = ffi.new('float[?]', frames * SAMPLE_RATE / 100)
+		self.audio_buffer = ffi.new('short[?]', frames * SAMPLE_RATE / 100)
 	end
 
 	-- Get the length of our timer for the audio stream..
@@ -485,6 +485,7 @@ end
 local sequence = 1
 
 local bor = bit.bor
+local band = bit.band
 local lshift = bit.lshift
 
 function client:createAudioPacket(codec, target, seq)
@@ -516,7 +517,9 @@ function client:streamAudio()
 	-- Loop through each channel of audio and mix them together with simple addition.
 	for channel, stream in pairs(self.audio_streams) do
 		-- Get the PCM samples for our stream
-		local pcm, pcm_size = stream:streamSamples(self.audio_frames * 10, SAMPLE_RATE, CHANNELS)
+
+		-- Get PCM data for a x * 10ms chunk
+		local pcm, pcm_size = stream:streamSamples(self.audio_frames * 10, SAMPLE_RATE)
 
 		if not pcm or not pcm_size or pcm_size <= 0 then
 			-- If we have no PCM data, or the size is too small, we end the audio stream
@@ -530,7 +533,7 @@ function client:streamAudio()
 				biggest_pcm_size = pcm_size
 			end
 			for i=0,pcm_size-1 do
-				-- Mix all channels together in the buffer
+				-- Mix all virtual audio channels together in the buffer
 				self.audio_buffer[i] = self.audio_buffer[i] + pcm[i]
 			end
 		end
@@ -548,7 +551,7 @@ function client:streamAudio()
 	if not encoded or encoded_len <= 0 then return end
 
 	-- Check if the audio packet is too big.
-	if encoded_len > 8191 then
+	if encoded_len > 0x1FFF then
 		log.error("encoded frame too large for audio packet..", encoded_len)
 		return
 	end
@@ -566,7 +569,7 @@ function client:streamAudio()
 	local b = self:createAudioPacket(UDP_OPUS, 0, sequence)
 
 	b:writeMumbleVarInt(encoded_len) -- Write the length of the encoded data in the header
-	b:write(ffi.string(encoded, encoded_len)) -- Write encoded data
+	b:write(ffi.string(encoded, band(encoded_len, 0x1FFF))) -- Write encoded data
 
 	b:seek("set", 2)
 	b:writeInt(b.length - 6) -- Set size of payload

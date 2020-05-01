@@ -19,8 +19,8 @@ local function AudioStream(path, volume, count)
 		vorbis = vorbis,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
-		buffer = new('float[?]', 2048),
-		rebuffer = new('float[?]', 2048),
+		buffer = new('short[?]', 4096),
+		rebuffer = new('short[?]', 4096),
 		volume = volume or 0.25,
 		loop_count = count or 0,
 		talking_count = 0,
@@ -55,26 +55,48 @@ function STREAM:setUserTalking(talking)
 	end
 end
 
-function STREAM:streamSamples(duration, sample_rate, channels)
+local ceil = math.ceil
+local floor = math.floor
+
+function STREAM:streamSamples(duration, sample_rate)
+	local channels = self.info.channels
 	local sample_size = self.info.sample_rate * duration / 1000
 
-	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 1, self.buffer, sample_size)
+	local num_samples = stb.stb_vorbis_get_samples_short_interleaved(self.vorbis, channels, self.buffer, sample_size * channels)
 	local source_rate = self.info.sample_rate
 
+	-- Downmix to 1 channel
+	local j = 0
+	for i=0,num_samples * channels, channels do
+		local total = 0
+		for c=0, channels-1 do
+			-- Add all the channels together
+			total = total + self.buffer[i + c]
+		end
+		-- Average the channels out
+		self.rebuffer[j] = total / channels
+		j = j + 1
+	end
+
+	-- Copy mono audio back into our main buffer
+	copy(self.buffer, self.rebuffer, sizeof(self.rebuffer))
+
 	if source_rate ~= sample_rate then
+		-- Clear the rebuffer so we can use it again
+		ffi.fill(self.rebuffer, ffi.sizeof(self.rebuffer))
+
 		-- Resample the audio
-		local scale = num_samples/sample_size
-		local original_size = sample_size
+		local scale = num_samples / sample_size
 
 		sample_size = sample_size * sample_rate / source_rate
-		num_samples = math.ceil(sample_size * scale)
+		num_samples = ceil(sample_size * scale)
 
 		for t=0,num_samples/2 do
 			-- Resample the audio to fit within the requested sample_rate
-			self.rebuffer[t * 2] = self.buffer[math.floor(t / sample_rate * source_rate) * 2] * 2
+			self.rebuffer[t * 2] = self.buffer[floor(t / sample_rate * source_rate) * 2] * 2
 		end
 
-		-- Copy our new buffer into the original buffer
+		-- Copy resampled audio back into the main buffer
 		copy(self.buffer, self.rebuffer, sizeof(self.rebuffer))
 	end
 

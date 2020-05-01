@@ -519,7 +519,7 @@ local disadvantage_shortcuts = {
 }
 
 client:addCommand("roll", function(client, user, cmd, args, raw)
-	local str = raw:sub(#cmd+2)
+	local str = raw:lower():sub(#cmd+2)
 
 	for _, dadv in pairs(disadvantage_shortcuts) do
 		str = str:gsub(dadv, "min(d20, d20)")
@@ -865,7 +865,7 @@ client:addCommand("dnd", function(client, user, cmd, args, raw)
 			client:getPlaying(channel):fadeOut(5)
 		end
 		return
-	end	
+	end
 
 	if lfs.attributes(path,"mode") ~= "directory" then
 		local moods = {}

@@ -53,7 +53,7 @@ concommand.Add("status", function(cmd, args)
 	for host, clients in pairs(mumble.clients) do
 		for port, client in pairs(clients) do
 			print(("%s:%d"):format(host, port))
-			print(("\tname  : %s"):format(client:getChannel():getName()))
+			print(("\tname  : %s"):format(client:getChannel()))
 			print(("\tusers : %d"):format(table.Count(client:getUsers()), client.config.max_users or 0))
 			print(("\tuptime: %s"):format(math.SecondsToHuman(client:getTime())))
 
@@ -64,7 +64,7 @@ concommand.Add("status", function(cmd, args)
 			for k, user in UserPairs(users) do
 				local channel = user:getChannel()
 				local channel_format = ("%-3d[%-13s]"):format(channel:getID(), channel:getName():ellipse(13))
-				print(("# %2s %3s %-".. #longest .."s %-16s %-18s %-11s %s"):format(user:getID(), user:getSession(), user:getName(), user:getAddress(), channel_format, math.SecondsToHuman(user:getStat("onlinesecs", 0), 1), math.SecondsToHuman(user:getStat("idlesecs", 0), 1)))
+				print(("# %2s %3s %-".. #longest + 11 .."s %-16s %-18s %-11s %s"):format(user:getID(), user:getSession(), user, user:getAddress(), channel_format, math.SecondsToHuman(user:getStat("onlinesecs", 0), 1), math.SecondsToHuman(user:getStat("idlesecs", 0), 1)))
 			end
 		end
 	end
@@ -76,13 +76,13 @@ local function printTree(branch, tabs)
 	local users, num_users = branch:getUsers()
 
 	if num_users > 0 then
-		print(("%s%3i - %s (%i)"):format(("\t"):rep(tabs), branch:getID(), branch:getName(), num_users))
+		print(("%s%3i - %s (%i)"):format(("\t"):rep(tabs), branch:getID(), branch, num_users))
 	else
-		print(("%s%3i - %s"):format(("\t"):rep(tabs), branch:getID(), branch:getName()))
+		print(("%s%3i - %s"):format(("\t"):rep(tabs), branch:getID(), branch))
 	end
 
 	for k,user in UserPairs(users) do
-		print(("%s%3i - %s"):format(("\t"):rep(tabs + 1), user:getID(), user:getName()))
+		print(("%s%3i - %s"):format(("\t"):rep(tabs + 1), user:getID(), user))
 	end
 
 	for k,chan in ChannelPairs(branch:getChildren()) do
