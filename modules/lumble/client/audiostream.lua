@@ -19,8 +19,8 @@ local function AudioStream(path, volume, count)
 		vorbis = vorbis,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
-		buffer = new('short[?]', 4096),
-		rebuffer = new('short[?]', 4096),
+		buffer = new('float[?]', 4096),
+		rebuffer = new('float[?]', 4096),
 		volume = volume or 0.25,
 		loop_count = count or 0,
 		talking_count = 0,
@@ -60,10 +60,11 @@ local floor = math.floor
 
 function STREAM:streamSamples(duration, sample_rate)
 	local channels = self.info.channels
-	local sample_size = self.info.sample_rate * duration / 1000
-
-	local num_samples = stb.stb_vorbis_get_samples_short_interleaved(self.vorbis, channels, self.buffer, sample_size * channels)
+	
 	local source_rate = self.info.sample_rate
+	local sample_size = source_rate * duration / 1000
+
+	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, channels, self.buffer, sample_size * channels)
 
 	-- Downmix to 1 channel
 	local j = 0

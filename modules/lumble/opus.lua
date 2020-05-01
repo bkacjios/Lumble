@@ -94,7 +94,7 @@ end
 
 function Encoder:encode(input, input_len, max_data_bytes)
 	local data = new("unsigned char[?]", max_data_bytes)
-	local ret = lib.opus_encode(self, input, input_len, data, max_data_bytes)
+	local ret = lib.opus_encode_float(self, input, input_len, data, max_data_bytes)
 	if ret < 0 then return throw(ret) end
 
 	return data, ret

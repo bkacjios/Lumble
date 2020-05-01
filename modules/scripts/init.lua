@@ -14,9 +14,6 @@ local params = {
 	certificate = "config/dongerbot.pem",
 }
 
---local client = mumble.getClient("198.27.70.16", 7331, params)
---local client = mumble.getClient("mbl27.gameservers.com", 10004, params)
---local client = mumble.getClient("mumble.bitassemble.com", 64738, params)
 local client = mumble.getClient("::1", 64738, params)
 
 if not client then return end 

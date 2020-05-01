@@ -109,7 +109,7 @@ function client.new(host, port, params)
 		audio_streams = {},
 		audio_volume = 0.15,
 		audio_frames = DEFAULT_FRAMES,
-		audio_buffer = ffi.new('short[?]', DEFAULT_FRAMES * SAMPLE_RATE / 100),
+		audio_buffer = ffi.new('float[?]', DEFAULT_FRAMES * SAMPLE_RATE / 100),
 	}
 
 	-- Create an event using the sockets file desciptor for when client is ready to read data
@@ -197,7 +197,7 @@ function client:createAudioStream(bitspersec)
 		log.debug("Server maximum network bandwidth is only %d kbit/s. Audio quality auto-adjusted to %d kbit/s (%d ms)", bitspersec / 1000, bitrate / 1000, frames * 10)
 		self.audio_frames = frames
 		self.encoder:set("bitrate", bitrate)
-		self.audio_buffer = ffi.new('short[?]', frames * SAMPLE_RATE / 100)
+		self.audio_buffer = ffi.new('float[?]', frames * SAMPLE_RATE / 100)
 	end
 
 	-- Get the length of our timer for the audio stream..
