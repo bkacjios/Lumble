@@ -36,11 +36,9 @@ local function Buffer(length)
 		length = max(length, 0)
 	end
 
-	local size = length or 32
-
 	local meta = {
 		position = 0,
-		length = size,
+		length = length or 32,
 	}
 
 	if not length then
@@ -360,7 +358,7 @@ function BUFFER:writeShort(short)
 end
 
 function BUFFER:readShort()
-	if self.position + 1 > self.length then return nil end
+	if self.position >= self.length then return nil end
 	return bor(lshift(self:readByte(), 8), lshift(self:readByte(), 0))
 end
 
@@ -380,13 +378,6 @@ function BUFFER:next()
 	return byte(self:toString(self.position + 1, 1))
 end
 
-function BUFFER:readNullString()
-	local null = self:toString(self.position + 1):find('%z')
-	if null then
-		return self:readLen(null)
-	end
-end
-
 function BUFFER:peekPattern(pattern)
 	local _, pos = self:toString(self.position + 1):find(pattern)
 	if pos then
@@ -399,6 +390,10 @@ function BUFFER:readPattern(pattern)
 	if pos then
 		return self:readLen(pos)
 	end
+end
+
+function BUFFER:readNullString()
+	return self:readPattern('%z')
 end
 
 function BUFFER:writeNullString(str)

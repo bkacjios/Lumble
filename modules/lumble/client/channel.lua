@@ -103,8 +103,8 @@ function channel:getClient()
 	return self.client
 end
 
-function channel:send(packet)
-	return self.client:send(packet)
+function channel:sendTCP(packet)
+	return self.client:sendTCP(packet)
 end
 
 function channel:message(text, ...)
@@ -117,20 +117,20 @@ function channel:message(text, ...)
 	local msg = packet.new("TextMessage")
 	msg:add("channel_id", self.channel_id)
 	msg:set("message", text)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function channel:setDescription(desc)
 	local msg = packet.new("ChannelState")
 	msg:set("channel_id", self.channel_id)
 	msg:set("description", desc)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function channel:remove()
 	local msg = packet.new("ChannelRemove")
 	msg:set("channel_id", self.channel_id)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function channel:getID()

@@ -80,34 +80,34 @@ function user:getClient()
 	return self.client
 end
 
-function user:send(packet)
-	return self.client:send(packet)
+function user:sendTCP(packet)
+	return self.client:sendTCP(packet)
 end
 
 function user:setRecording(bool)
 	local msg = packet.new("UserState")
 	msg:set("recording", bool and true or false)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:setPrioritySpeaker(bool)
 	local msg = packet.new("UserState")
 	msg:set("priority_speaker", bool and true or false)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:setSelfMuted(bool)
 	if self.client.me ~= self then return end
 	local msg = packet.new("UserState")
 	msg:set("self_mute", bool and true or false)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:setSelfDeafened(bool)
 	if self.client.me ~= self then return end
 	local msg = packet.new("UserState")
 	msg:set("self_deaf", bool and true or false)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:getURL()
@@ -126,7 +126,7 @@ function user:message(text, ...)
 	local msg = packet.new("TextMessage")
 	msg:add("session", self.session)
 	msg:set("message", text)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:kick(reason, ...)
@@ -134,7 +134,7 @@ function user:kick(reason, ...)
 	local msg = packet.new("UserRemove")
 	msg:set("session", self.session)
 	msg:set("reason", reason:format(...))
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:ban(reason, ...)
@@ -143,7 +143,7 @@ function user:ban(reason, ...)
 	msg:set("session", self.session)
 	msg:set("reason", reason:format(...))
 	msg:set("ban", true)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:move(channel)
@@ -154,7 +154,7 @@ function user:move(channel)
 	else
 		msg:set("channel_id", channel:getID())
 	end
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:requestStats(detailed)
@@ -164,7 +164,7 @@ function user:requestStats(detailed)
 	local msg = packet.new("UserStats")
 	msg:set("session", self.session)
 	msg:set("stats_only", not detailed or not root:hasPermission(permission.REGISTER)) -- or not chan:hasPermission(permission.ENTER)
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 function user:getChannel(path)

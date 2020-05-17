@@ -40,6 +40,13 @@ local UDP_SPEEX = 2
 local UDP_CELT_BETA = 3
 local UDP_OPUS = 4
 
+local MAX_UDP_BUFFER = 1024
+
+local bor = bit.bor
+local band = bit.band
+local lshift = bit.lshift
+local rshift = bit.rshift
+
 function client.new(host, port, params)	
 	local tcp = socket.tcp()
 	tcp:settimeout(5)
@@ -83,6 +90,7 @@ function client.new(host, port, params)
 			tcp_ping_avg = 0,
 			tcp_ping_var = 0,
 		},
+		tunnel_udp = true,
 		version = {},
 		channels = {},
 		users = {},
@@ -109,6 +117,7 @@ function client.new(host, port, params)
 		audio_volume = 0.15,
 		audio_frames = DEFAULT_FRAMES,
 		audio_buffer = ffi.new('float[?]', DEFAULT_FRAMES * SAMPLE_RATE / 100),
+		audio_sequence = 0,
 	}
 
 	-- Create an event using the sockets file desciptor for when client is ready to read data
@@ -287,12 +296,12 @@ function client:auth(username, password, tokens)
 
 	local major, minor, patch = string.match(string.format("%06d", jit.version_num), "(%d%d)(%d%d)(%d%d)")
 
-	version:set("version", bit.lshift(tonumber(major), 16) + bit.lshift(tonumber(minor), 8) + tonumber(patch))
+	version:set("version", lshift(tonumber(major), 16) + lshift(tonumber(minor), 8) + tonumber(patch))
 	version:set("release", _VERSION)
 	version:set("os", jit.os)
 	version:set("os_version", jit.arch)
 
-	self:send(version)
+	self:sendTCP(version)
 
 	local auth = packet.new("Authenticate")
 	auth:set("opus", true)
@@ -307,10 +316,10 @@ function client:auth(username, password, tokens)
 		auth:add("tokens", v)
 	end
 
-	self:send(auth)
+	self:sendTCP(auth)
 end
 
-function client:send(packet)
+function client:sendTCP(packet)
 	log.trace("Send TCP %s to server", packet)
 	return self.tcp:send(packet:toString())
 end
@@ -320,20 +329,30 @@ function client:sendUDP(packet)
 	return self.udp:send(self.crypt:encrypt(packet:toString()))
 end
 
+function client:sendAudioPacket(packet)
+	if self.tunnel_udp then
+		packet:seek("set", 2)
+		packet:writeInt(packet.length - 6) -- Set size of payload
+		self:sendTCP(packet)
+	else
+		self:sendUDP(packet)
+	end
+end
+
 function client:getTime()
 	return socket.gettime() - self.start
 end
 
 function client:pingTCP()
 	local ping = packet.new("Ping")
-	ping:set("timestamp", self:getTime() * 1000)
+
+	ping:set("timestamp", math.floor(self:getTime() * 1000))
 	ping:set("tcp_packets", self.ping.tcp_packets)
 	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
 	ping:set("tcp_ping_var", self.ping.tcp_ping_avg)
 	ping:set("udp_packets", self.ping.udp_packets)
 	ping:set("udp_ping_avg", self.ping.udp_ping_avg)
 	ping:set("udp_ping_var", self.ping.udp_ping_var)
-
 	ping:set("resync", self.ping.resync)
 
 	if self.crypt:isValid() then
@@ -342,14 +361,14 @@ function client:pingTCP()
 		ping:set("late", self.crypt:getLate())
 	end
 
-	self:send(ping)
+	self:sendTCP(ping)
 	self.ping.tcp_ping_acc = self.ping.tcp_ping_acc + 1
 end
 
 function client:pingUDP()
 	local b = buffer()
-	b:writeByte(bit.lshift(UDP_PING, 5))
-	b:writeMumbleVarInt(self:getTime() * 1000)
+	b:writeByte(lshift(UDP_PING, 5))
+	b:writeMumbleVarInt(math.floor(self:getTime() * 1000))
 	self:sendUDP(b)
 	self.ping.udp_ping_acc = self.ping.udp_ping_acc + 1
 end
@@ -366,12 +385,12 @@ function client:receiveVoiceData(packet, codec, target)
 
 	if codec == UDP_SPEEX or codec == UDP_CELT_ALPHA or codec == UDP_CELT_BETA then
 		local header = packet:readByte()
-		talking = bit.band(header, 0x80) ~= 0x80
+		talking = band(header, 0x80) ~= 0x80
 	elseif codec == UDP_OPUS then
 		local header = packet:readMumbleVarInt()
 
-		local len = bit.band(header, 0x1FFF)
-		talking = bit.band(header, 0x2000) ~= 0x2000
+		local len = band(header, 0x1FFF)
+		talking = band(header, 0x2000) ~= 0x2000
 
 		--record:write(packet:toString())
 
@@ -382,12 +401,9 @@ function client:receiveVoiceData(packet, codec, target)
 		b:writeMumbleVarInt(header)
 		b:write(all)
 
-		b:seek("set", 2)
-		b:writeInt(b.length - 6) -- Set size of payload
+		self:sendAudioPacket(b)]]
 
 		--record:write(all)
-
-		self.tcp:send(b:toString())]]
 	end
 
 	if user.talking ~= talking then
@@ -401,7 +417,6 @@ function client:receiveVoiceData(packet, codec, target)
 end
 
 function client:doping()
-
 	-- Check if we recieved 3 or more pings without the server responding..
 	if self.ping.tcp_ping_acc >= 3 then
 		-- Disconnect from the server, since we seem to have lost connection
@@ -420,7 +435,7 @@ function client:doping()
 end
 
 function client:readudp()
-	local read, err = self.udp:receive(1024)
+	local read, err = self.udp:receive(MAX_UDP_BUFFER)
 
 	if read then
 		local success, decrypted = self.crypt:decrypt(read)
@@ -429,27 +444,30 @@ function client:readudp()
 			local b = buffer(decrypted)
 
 			local header = b:readByte()
-			local id = bit.rshift(header, 5)
+			local id = rshift(header, 5)
 
 			if id == UDP_PING then
 				local timestamp = b:readMumbleVarInt()
 
-				local time = self:getTime() * 1000
+				local time = math.floor(self:getTime() * 1000)
 				local ms = (time - timestamp)
+
 				self.ping.udp_packets = self.ping.udp_packets + 1
 				self.ping.udp_ping_total = self.ping.udp_ping_total + ms
 				self.ping.udp_ping_avg = self.ping.udp_ping_total / self.ping.udp_packets
 				self.ping.udp_ping_var = math.abs(ms - self.ping.udp_ping_avg) ^ 2
 				self.ping.udp_ping_acc = self.ping.udp_ping_acc - 1
 
+				-- We have a UDP connection, do not tunnel through UDP
+				self.tunnel_udp = false
+
 				log.trace("Ping UDP: %0.2f ms", ms)
-			elseif id == UDP_OPUS or id == UDP_SPEEX or id == UDP_CELT_BETA or id == UDP_CELT_ALPHA then
+			elseif id == UDP_OPUS or id == UDP_SPEEX or id == UDP_CELT_ALPHA or id == UDP_CELT_BETA then
 				-- UDP Voice data
-				local target = bit.band(header, 31)
+				local target = band(header, 31)
 				self:receiveVoiceData(b, id, target)
 			end
 		end
-
 	elseif err == "wantread" then
 	elseif err == "wantwrite" then
 	elseif err == "timeout" then
@@ -478,13 +496,13 @@ function client:readtcp()
 			else
 				read, err = self.tcp:receive(len) -- Read the remaining bytes in the packet
 
-				if id == 1 then
+				if id == 1 then -- UDP Tunnel
 					-- Handle voice data
 					local voice = buffer(read)
 					local header = voice:readByte()
 
-					local codec = bit.rshift(header, 5)
-					local target = bit.band(header, 31)
+					local codec = rshift(header, 5)
+					local target = band(header, 31)
 
 					self:receiveVoiceData(voice, codec, target)
 				else
@@ -504,18 +522,14 @@ function client:readtcp()
 	end
 end
 
-local sequence = 1
-
-local bor = bit.bor
-local band = bit.band
-local lshift = bit.lshift
-
 function client:createAudioPacket(codec, target, seq)
 	local b = buffer()
 
-	-- Only needed for TCP packets
-	--b:writeShort(1) -- Type UDPTunnel
-	--b:writeInt(0) -- Size of payload
+	if self.tunnel_udp then
+		-- Only needed for TCP packets
+		b:writeShort(1) -- Type UDPTunnel
+		b:writeInt(0) -- Size of payload
+	end
 
 	-- Start of voice datagram
 	local header = bor(lshift(codec, 5), target)
@@ -586,26 +600,18 @@ function client:streamAudio()
 		encoded_len = bor(lshift(1, 13), encoded_len)
 	end
 
-	--[[if bit.band(encoded_len, 0x2000) == 0x2000 then
+	--[[if band(encoded_len, 0x2000) == 0x2000 then
 		print("end of stream")
 	end]]
 
-	local b = self:createAudioPacket(UDP_OPUS, 0, sequence)
+	local b = self:createAudioPacket(UDP_OPUS, 0, self.audio_sequence)
 
 	b:writeMumbleVarInt(encoded_len) -- Write the length of the encoded data in the header
 	b:write(ffi.string(encoded, band(encoded_len, 0x1FFF))) -- Write encoded data
 
-	--b:seek("set", 2)
-	--b:writeInt(b.length - 6) -- Set size of payload
+	self:sendAudioPacket(b)
 
-	self:sendUDP(b)
-	--self.tcp:send(b:toString())
-
-	sequence = (sequence + 1) % 10000
-end
-
-function client:sleep(t)
-	socket.sleep(t)
+	self.audio_sequence = (self.audio_sequence + 1) % 10240
 end
 
 function client:onPacketTCP(packet)
@@ -636,8 +642,9 @@ function client:onAuthenticate(packet)
 end
 
 function client:onPing(packet)
-	local time = self:getTime() * 1000
+	local time = math.floor(self:getTime() * 1000)
 	local ms = (time - packet.timestamp)
+
 	self.ping.tcp_packets = self.ping.tcp_packets + 1
 	self.ping.tcp_ping_total = self.ping.tcp_ping_total + ms
 	self.ping.tcp_ping_avg = self.ping.tcp_ping_total / self.ping.tcp_packets
@@ -665,6 +672,8 @@ function client:onServerSync(packet)
 	self.me = self.users[self.session]
 	self.num_users = self.num_users + 1
 	log.info("message: %s", packet.welcome_text:stripHTML())
+
+	self:pingTCP()
 
 	for session, user in pairs(self:getUsers()) do
 		user:requestStats(true)
@@ -841,6 +850,8 @@ function client:onCryptSetup(packet)
 
 	if self.crypt:isValid() then
 		log.info("CryptState: \27[1;32m%s\27[0m", "VALID")
+		-- Send a ping immediately to establish we have a UDP connection 
+		self:pingUDP()
 	else
 		log.warn("CryptState: \27[38;5;208m%s\27[0m", "INVALID")
 	end
@@ -880,13 +891,13 @@ end
 function client:hasPermission(channel, flag)
 	local channel_id = channel:getID()
 
-	--[[if not self.permissions[channel_id] then
+	if not self.permissions[channel_id] then
 		local query = packet.new("PermissionQuery")
 		query:set("channel_id", channel_id)
-		self:send(query)
-	end]]
+		self:sendTCP(query)
+	end
 
-	return bit.band(self.permissions[channel_id] or 0, flag) > 0
+	return band(self.permissions[channel_id] or 0, flag) > 0
 end
 
 function client:onCodecVersion(packet)
@@ -963,7 +974,7 @@ end
 
 function client:requestUserList()
 	local msg = packet.new("UserList")
-	self:send(msg)
+	self:sendTCP(msg)
 end
 
 local COMMAND = {}
