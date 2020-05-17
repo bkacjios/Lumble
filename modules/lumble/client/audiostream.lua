@@ -21,7 +21,7 @@ local function AudioStream(path, volume, count)
 		info = stb.stb_vorbis_get_info(vorbis),
 		buffer = new('float[?]', 4096),
 		rebuffer = new('float[?]', 4096),
-		volume = volume or 0.25,
+		volume = volume or 1,
 		loop_count = count or 0,
 		talking_count = 0,
 		fade_volume = 1,
@@ -49,7 +49,7 @@ function STREAM:setUserTalking(talking)
 		self.ducked = true
 		self:duckTo(0.25, 0.2)
 	else
-		-- WHen no one is talking, unmark and raise volume back to 100% gradually over a second.
+		-- When no one is talking, unmark and raise volume back to 100% gradually over a second.
 		self.ducked = false
 		self:duckTo(1, 1)
 	end

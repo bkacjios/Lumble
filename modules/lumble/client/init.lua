@@ -114,7 +114,7 @@ function client.new(host, port, params)
 		commands = {},
 		start = socket.gettime(),
 		audio_streams = {},
-		audio_volume = 0.15,
+		audio_volume = 0.5,
 		audio_frames = DEFAULT_FRAMES,
 		audio_buffer = ffi.new('float[?]', DEFAULT_FRAMES * SAMPLE_RATE / 100),
 		audio_sequence = 0,
@@ -229,7 +229,7 @@ function client:playOggStream(stream, channel)
 end
 
 function client:playOgg(file, channel, volume, count)
-	local ogg, err = stream(file, volume or self.audio_volume, count)
+	local ogg, err = stream(file, volume, count)
 	if ogg then
 		self.audio_streams[channel or 1] = ogg
 		return ogg
@@ -237,11 +237,11 @@ function client:playOgg(file, channel, volume, count)
 	return ogg, err
 end
 
-function client:setGlobalVolume(volume)
+function client:setMasterVolume(volume)
 	self.audio_volume = volume
 end
 
-function client:getAudioVolume()
+function client:getMasterVolume()
 	return self.audio_volume
 end
 
@@ -572,7 +572,7 @@ function client:streamAudio()
 			end
 			for i=0,pcm_size-1 do
 				-- Mix all virtual audio channels together in the buffer
-				self.audio_buffer[i] = self.audio_buffer[i] + pcm[i]
+				self.audio_buffer[i] = self.audio_buffer[i] + pcm[i] * self.audio_volume
 			end
 		end
 	end

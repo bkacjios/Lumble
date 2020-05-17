@@ -129,7 +129,7 @@ client:hook("OnTextMessage", "soundboard", function(client, event)
 		end
 		if lfs.attributes(file,"mode") == "file" then
 			log.debug("%s played: #%s", user, message:sub(2))
-			client:playOgg(file, user.session + 10, 0.35)
+			client:playOgg(file, user.session + 10)
 			return true
 		end
 	end
@@ -495,7 +495,7 @@ client:addCommand("initiative", function(client, user, cmd, args, raw)
 	table.insert(rolled_initiatives, {name = name, roll = total, bonus = bonus})
 	table.sort(rolled_initiatives, function(a, b) return a.roll + a.bonus > b.roll + b.bonus end)
 
-	client:playOgg(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)), 3, 0.5)
+	client:playOgg(("audio/dnd/dice_roll_1-%d.ogg"):format(math.random(1, 2)), 3)
 
 	user:getChannel():message(message)
 end):setHelp("Roll for initiative"):setUsage("[clear, list, initiative bonus]"):alias("init")
@@ -616,7 +616,7 @@ client:addCommand("roll", function(client, user, cmd, args, raw)
 	else
 		local sound_num = math.min(num_rolls, 6)
 		local rand = math.random(1, 2)
-		client:playOgg(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, rand), 3, 0.5)
+		client:playOgg(("audio/dnd/dice_roll_%d-%d.ogg"):format(sound_num, rand), 3)
 		user:getChannel():message(message)
 	end
 end):setHelp("Roll some dice"):setUsage("[1D20 [, expression]]"):alias("proll"):alias("rtd"):alias("rol"):alias("rool"):alias("rrol"):alias("rroll"):alias("rl"):alias("tol"):alias("yol")
@@ -652,7 +652,7 @@ client:addCommand("flip", function(client, user, cmd, args, raw)
 	if cmd:sub(2) == "pflip" then
 		user:message(message)
 	else
-		client:playOgg(("audio/dnd/coin_flip-%d.ogg"):format(math.random(1,2)), 4, 0.5)
+		client:playOgg(("audio/dnd/coin_flip-%d.ogg"):format(math.random(1,2)), 4)
 		user:getChannel():message(message)
 	end
 end):setHelp("Flip a coin"):setUsage("[#coins = 1]"):alias("pflip")
@@ -673,7 +673,7 @@ client:addCommand("rollstats", function(client, user, cmd, args)
 		table.insert(stats, stat)
 	end
 
-	client:playOgg(("audio/dnd/dice_roll_4-%d.ogg"):format(math.random(1, 2)), 3, 0.5)
+	client:playOgg(("audio/dnd/dice_roll_4-%d.ogg"):format(math.random(1, 2)), 3)
 	user:getChannel():message("<p><b>%s</b>, here are your stats to choose from: <b><span style=\"color:#3377ff\">%s</span></b>", user:getName(), table.concat(stats, ", "))
 end):setHelp("Rolls 4D6 and takes the highest 3 values, 6 times")
 
@@ -821,16 +821,28 @@ end)
 
 client:addCommand("volume", function(client, user, cmd, args, raw)
 	local volume = args[1]
-	local channel = args[2] and tonumber(args[2]) or 1
+	local channel = tonumber(args[2])
 	if volume then
 		volume = tonumber(volume)/100
 		if not user:isMaster() then volume = math.min(volume,1) end
-		client:setVolume(volume, channel)
-		log.debug(("[COMMAND] %s: changed the volume of channel %i to %i"):format(user:getName(), channel, volume*100))
+		if channel then
+			client:setVolume(volume, channel)
+			log.debug(("[COMMAND] %s: changed the volume of channel %i to %i"):format(user:getName(), channel, volume*100))
+		else
+			client:setMasterVolume(volume)
+			log.debug(("[COMMAND] %s: changed the master volume to %i"):format(user:getName(), volume*100))
+		end
 	else
-		user:message(("Volume level: <b>%i</b>"):format(client:getVolume()*100))
+		if channel then
+			user:message(("Volume: <b>%i</b>"):format(client:getVolume(channel)*100))
+		else
+			user:message(("Master volume: <b>%i</b>"):format(client:getMasterVolume()*100))
+		end
 	end
 end):setHelp("Set the volume of any playing audio"):setUsage("<volume> [channel]")
+
+local DND_CHAN_MUSIC = 1
+local DND_CHAN_AMBIENCE = 2
 
 local playlist = {}
 local track = { 0, 0 }
@@ -844,7 +856,7 @@ local function playPlaylist(client, channel)
 	track[channel] = track[channel] + 1
 
 	if playlist[channel][track[channel]] then
-		client:playOgg(playlist[channel][track[channel]], channel)
+		client:playOgg(playlist[channel][track[channel]], channel, 0.35)
 	end
 end
 
@@ -852,7 +864,7 @@ client:hook("AudioStreamFinish", playPlaylist)
 
 client:addCommand("dnd", function(client, user, cmd, args, raw)
 	local folder = cmd:sub(2) == "ambience" and "ambience" or "music"
-	local channel = cmd:sub(2) == "ambience" and 2 or 1
+	local channel = cmd:sub(2) == "ambience" and DND_CHAN_AMBIENCE or DND_CHAN_MUSIC
 
 	playlist[channel] = {}
 
@@ -899,12 +911,21 @@ client:addCommand("fade", function(client, user, cmd, args, raw)
 end):setHelp("Fade out the current audio"):setUsage("[channel] [duration]")
 
 client:addCommand("endsession", function(client, user, cmd, args, raw)
-	local root = client:getChannelRoot()
 	local channel = client.me:getChannel()
 
-	if channel:getID() == 24 or channel:getID() == 45 then
+	playlist[DND_CHAN_MUSIC] = {}
+	playlist[DND_CHAN_AMBIENCE] = {}
+
+	if client:isPlaying(DND_CHAN_MUSIC) then
+		client:getPlaying(DND_CHAN_MUSIC):fadeOut(5)
+	end
+	if client:isPlaying(DND_CHAN_AMBIENCE) then
+		client:getPlaying(DND_CHAN_AMBIENCE):fadeOut(5)
+	end
+
+	if channel:getID() == 24 then
 		for session, user in pairs(channel:getUsers()) do
-			user:move(root)
+			user:move("../")
 		end
 	end
 end):setHelp("End the D&D session")
@@ -923,7 +944,7 @@ client:addCommand("tts", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
 	os.execute(string.format("LD_LIBRARY_PATH=:/usr/local/lib ./say_linux -w tts.wav %q", "[:phone on]" .. str)) -- > /dev/null
 	os.execute(("oggenc --resample 48000 --quiet -o tts/%s.ogg tts.wav"):format(user.hash))
-	client:playOgg(("tts/%s.ogg"):format(user.hash), user.session + 100, 1)
+	client:playOgg(("tts/%s.ogg"):format(user.hash), user.session + 100)
 end)
 
 local json = require("json")
