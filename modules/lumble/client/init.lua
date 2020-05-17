@@ -44,10 +44,10 @@ function client.new(host, port, params)
 	local tcp = socket.tcp()
 	tcp:settimeout(5)
 
-	--[[local udp = socket.udp()
+	local udp = socket.udp()
 	local status, err = udp:setpeername(host, port)
 	if not status then return false, err end
-	udp:settimeout(0)]]
+	udp:settimeout(0)
 
 	local status, err = tcp:connect(host, port)
 	if not status then return false, err end
@@ -66,16 +66,15 @@ function client.new(host, port, params)
 		crypt = ocbaes128.new(),
 		encoder = encoder,
 		tcp = tcp,
-		--udp = udp,
+		udp = udp,
 		host = host,
 		port = port,
 		params = params,
 		ping = {
-			good = 0,
-			late = 0,
-			lost = 0,
+			resync = 0,
 			udp_packets = 0,
 			udp_ping_acc = 0,
+			udp_ping_total = 0,
 			udp_ping_avg = 0,
 			udp_ping_var = 0,
 			tcp_packets = 0,
@@ -120,20 +119,20 @@ function client.new(host, port, params)
 	end, tcp:getfd(), ev.READ)
 
 	-- Create an event using the sockets file desciptor for when client is ready to read data
-	--[[object.onreadudp = ev.IO.new(function()
+	object.onreadudp = ev.IO.new(function()
 		-- Read the request safely using xpcall
 		local succ, err = xpcall(object.readudp, debug.traceback, object)
 		if not succ then log.error(err) end
-	end, udp:getfd(), ev.READ)]]
+	end, udp:getfd(), ev.READ)
 
 	object.ping_timer = ev.Timer.new(function()
 		local succ, err = xpcall(object.doping, debug.traceback, object)
 		if not succ then log.error(err) end
-	end, 5, 5)
+	end, 30, 30)
 
 	-- Register the event
 	object.onreadtcp:start(ev.Loop.default)
-	--object.onreadudp:start(ev.Loop.default)
+	object.onreadudp:start(ev.Loop.default)
 	object.ping_timer:start(ev.Loop.default)
 
 	return setmetatable(object, client)
@@ -145,10 +144,10 @@ end
 
 function client:close()
 	self.tcp:close()
-	--self.udp:close()
+	self.udp:close()
 
 	self.onreadtcp:stop(ev.Loop.default)
-	--self.onreadudp:stop(ev.Loop.default)
+	self.onreadudp:stop(ev.Loop.default)
 	self.ping_timer:stop(ev.Loop.default)
 	if self.audio_timer then
 		self.audio_timer:stop(ev.Loop.default)
@@ -331,6 +330,18 @@ function client:pingTCP()
 	ping:set("tcp_packets", self.ping.tcp_packets)
 	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
 	ping:set("tcp_ping_var", self.ping.tcp_ping_avg)
+	ping:set("udp_packets", self.ping.udp_packets)
+	ping:set("udp_ping_avg", self.ping.udp_ping_avg)
+	ping:set("udp_ping_var", self.ping.udp_ping_var)
+
+	ping:set("resync", self.ping.resync)
+
+	if self.crypt:isValid() then
+		ping:set("good", self.crypt:getGood())
+		ping:set("lost", self.crypt:getLost())
+		ping:set("late", self.crypt:getLate())
+	end
+
 	self:send(ping)
 	self.ping.tcp_ping_acc = self.ping.tcp_ping_acc + 1
 end
@@ -341,8 +352,6 @@ function client:pingUDP()
 	b:writeMumbleVarInt(self:getTime() * 1000)
 	self:sendUDP(b)
 	self.ping.udp_ping_acc = self.ping.udp_ping_acc + 1
-
-	self:readudp()
 end
 
 local record = io.open("data.vorbis", "wba")
@@ -404,36 +413,49 @@ function client:doping()
 	-- Only ping if we are fully synced with the server
 	if self.synced then
 		self:pingTCP()
-		--self:pingUDP()
+		self:pingUDP()
 	end
 
 	return true
 end
 
 function client:readudp()
-	local read = true
-	local err
+	local read, err = self.udp:receive(1024)
 
-	-- Read everything the server has sent us
-	while read do
-		read, err = self.udp:receive(1)
+	if read then
+		local success, decrypted = self.crypt:decrypt(read)
 
-		print(read, err)
+		if success then
+			local b = buffer(decrypted)
 
-		if read then
-			local b = buffer(read)
+			local header = b:readByte()
+			local id = bit.rshift(header, 5)
 
-			local id = b:readByte()
-			local stuff = b:readAll()
+			if id == UDP_PING then
+				local timestamp = b:readMumbleVarInt()
 
-			print(self.crypt:decrypt(stuff))
+				local time = self:getTime() * 1000
+				local ms = (time - timestamp)
+				self.ping.udp_packets = self.ping.udp_packets + 1
+				self.ping.udp_ping_total = self.ping.udp_ping_total + ms
+				self.ping.udp_ping_avg = self.ping.udp_ping_total / self.ping.udp_packets
+				self.ping.udp_ping_var = math.abs(ms - self.ping.udp_ping_avg) ^ 2
+				self.ping.udp_ping_acc = self.ping.udp_ping_acc - 1
 
-		elseif err == "timeout" then
-			return true
-		else
-			log.error("UDP connection error %q", err)
-			return false, err
+				log.trace("Ping UDP: %0.2f ms", ms)
+			elseif id == UDP_OPUS or id == UDP_SPEEX or id == UDP_CELT_BETA or id == UDP_CELT_ALPHA then
+				-- UDP Voice data
+				local target = bit.band(header, 31)
+				self:receiveVoiceData(b, id, target)
+			end
 		end
+
+	elseif err == "wantread" then
+	elseif err == "wantwrite" then
+	elseif err == "timeout" then
+	else
+		log.error("UDP connection error %q", err)
+		--self:close()
 	end
 end
 
@@ -468,7 +490,7 @@ function client:readtcp()
 				else
 					-- Handle command packets
 					local packet = packet.new(id, read)
-					self:onPacket(packet)
+					self:onPacketTCP(packet)
 				end
 			end
 		elseif err == "wantread" then
@@ -490,8 +512,10 @@ local lshift = bit.lshift
 
 function client:createAudioPacket(codec, target, seq)
 	local b = buffer()
-	b:writeShort(1) -- Type UDPTunnel
-	b:writeInt(0) -- Size of payload
+
+	-- Only needed for TCP packets
+	--b:writeShort(1) -- Type UDPTunnel
+	--b:writeInt(0) -- Size of payload
 
 	-- Start of voice datagram
 	local header = bor(lshift(codec, 5), target)
@@ -571,11 +595,11 @@ function client:streamAudio()
 	b:writeMumbleVarInt(encoded_len) -- Write the length of the encoded data in the header
 	b:write(ffi.string(encoded, band(encoded_len, 0x1FFF))) -- Write encoded data
 
-	b:seek("set", 2)
-	b:writeInt(b.length - 6) -- Set size of payload
+	--b:seek("set", 2)
+	--b:writeInt(b.length - 6) -- Set size of payload
 
-	--self:sendUDP(b)
-	self.tcp:send(b:toString())
+	self:sendUDP(b)
+	--self.tcp:send(b:toString())
 
 	sequence = (sequence + 1) % 10000
 end
@@ -584,7 +608,7 @@ function client:sleep(t)
 	socket.sleep(t)
 end
 
-function client:onPacket(packet)
+function client:onPacketTCP(packet)
 	local func = self["on" .. packet:getType()]
 
 	if not func then
@@ -619,7 +643,9 @@ function client:onPing(packet)
 	self.ping.tcp_ping_avg = self.ping.tcp_ping_total / self.ping.tcp_packets
 	self.ping.tcp_ping_var = math.abs(ms - self.ping.tcp_ping_avg) ^ 2
 	self.ping.tcp_ping_acc = self.ping.tcp_ping_acc - 1
-	--log.trace("Ping: %0.2f ms", ms)
+
+	log.trace("Ping TCP: %0.2f ms", ms)
+
 	self:hookCall("OnPing", ms)
 end
 
@@ -805,17 +831,18 @@ function client:onCryptSetup(packet)
 		if (key.size() == AES_KEY_SIZE_BYTES && client_nonce.size() == AES_BLOCK_SIZE && server_nonce.size() == AES_BLOCK_SIZE)
 			c->csCrypt.setKey(reinterpret_cast<const unsigned char *>(key.data()), reinterpret_cast<const unsigned char *>(client_nonce.data()), reinterpret_cast<const unsigned char *>(server_nonce.data()));
 		]]
-
 		self.crypt:setKey(packet.key, packet.client_nonce, packet.server_nonce)
 	elseif packet.server_nonce then
 		self.crypt:setDecryptIV(packet.server_nonce)
+		self.ping.resync = self.ping.resync + 1
 	else
 
 	end
 
 	if self.crypt:isValid() then
-		log.debug("Successfully setup crypt state")
-		--self:pingUDP()
+		log.info("CryptState: \27[1;32m%s\27[0m", "VALID")
+	else
+		log.warn("CryptState: \27[38;5;208m%s\27[0m", "INVALID")
 	end
 	
 	self:hookCall("OnCryptSetup")

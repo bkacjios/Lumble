@@ -4,3 +4,5 @@ config/dongerbot.pem
 data.vorbis
 test.lua
 error.log
+*.o
+ocb-aes128/ocb.so

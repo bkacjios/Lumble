@@ -177,7 +177,7 @@ local name_convert = {
 	["Paste"] = "Danger Rick",
 	["Will"] = "Gug",
 	["NewDale"] = "Alph",
-	["davey"] = "Coughertwo",
+	["Davey"] = "Coughertwo",
 	["Henricos"] = "Gørf",
 }
 
@@ -513,6 +513,7 @@ local disadvantage_shortcuts = {
 	"dadvan",
 	"disad",
 	"dadv",
+	"dis",
 }
 
 client:addCommand("roll", function(client, user, cmd, args, raw)
@@ -921,7 +922,7 @@ end):setHelp("Make the bot move you to the AFK channel")
 client:addCommand("tts", function(client, user, cmd, args, raw)
 	local str = raw:sub(#cmd+2)
 	os.execute(string.format("LD_LIBRARY_PATH=:/usr/local/lib ./say_linux -w tts.wav %q", "[:phone on]" .. str)) -- > /dev/null
-	os.execute(("oggenc --quiet --resample 48000 -o tts/%s.ogg tts.wav"):format(user.hash))
+	os.execute(("oggenc --resample 48000 --quiet -o tts/%s.ogg tts.wav"):format(user.hash))
 	client:playOgg(("tts/%s.ogg"):format(user.hash), user.session + 100, 1)
 end)
 
@@ -947,6 +948,7 @@ function twitchHttps(url, ...)
 		sink = ltn12.sink.table(t),
 		headers = {
 			["Client-ID"] = config.twitch.client,
+			["Accept"] = "application/vnd.twitchtv.v5+json"
 		},
 	})
 
@@ -982,17 +984,29 @@ local function formatTwitchClip(id)
 end
 
 local function formatTwitch(id)
-	local req = twitchHttps(("https://api.twitch.tv/kraken/streams/%s"):format(id))
-	if not req then return end
-	if( #req == 0 ) then return end
+	local user = twitchHttps(("https://api.twitch.tv/kraken/users?login=%s"):format(id))
+	if not user or #user == 0 then return end
 
-	local js = json.decode(req)
+	user = json.decode(user)
 
-	local stream = js.stream
+	if user.error then return user.error end
+
+	if user._total ~= 1 then return end
+
+	user = user.users[1]
+
+	local stream = twitchHttps(("https://api.twitch.tv/kraken/streams/%d"):format(user._id))
+	if not stream or #stream == 0 then return end
+
+	stream = json.decode(stream)
+
+	if stream.error then return stream.error end
+
+	stream = stream.stream
 
 	if not stream then return "Invalid twitch.tv stream." end
 
-	return [[
+	--[[return [[
 <table>
 	<tr>
 		<th align="center" colspan="2"><a href="%s"><img src="%s" width="250" /></a></th>
@@ -1007,8 +1021,15 @@ local function formatTwitch(id)
 			</table>
 		</td>
 	</tr>
-</table>
-]], stream.channel.url, stream.preview.medium, stream.channel.logo, stream.channel.status, stream.channel.display_name, stream.viewers
+</table>]]
+
+	return [[
+		<table>
+			<tr><td><a href="%s">%s</a> - %s</td></tr>
+			<tr><td><h4>%s</h4></td></tr>
+			<tr><td>%d viewers</td></tr>
+		</table>
+	]], stream.channel.url, stream.channel.display_name, stream.channel.game, stream.channel.status, stream.viewers
 end
 
 local function formatYoutube(id)
