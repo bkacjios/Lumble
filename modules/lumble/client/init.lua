@@ -980,7 +980,7 @@ end
 
 function client:requestACL(channel_id)
 	local channel_id = channel_id or 0 --default to root channel
-	local query = packet.new(13, proto.ACL())
+	local query = packet.new("ACL")
 	query:set("channel_id", channel_id)
 	query:set("query", true)
 	self:sendTCP(query)
