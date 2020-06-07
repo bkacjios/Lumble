@@ -27,11 +27,16 @@ function event.new(instance, packet, all)
 			else
 				event["channel"] = instance:getChannel(value)
 			end
+		elseif name == "groups" then
+			local g_dict = {}
+			for _,v in ipairs(value) do
+				g_dict[v.name] = v
+			end
+			event["groups"] = g_dict
 		elseif all then
 			event[name] = value
 		end
 	end
-
 	return event
 end
 

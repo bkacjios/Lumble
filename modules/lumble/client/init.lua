@@ -820,7 +820,8 @@ function client:onPermissionDenied(packet)
 end
 
 function client:onACL(packet)
-	self:hookCall("OnACL")
+	local event = event.new(self, packet, true)
+	self:hookCall("OnACL", event)
 end
 
 function client:onQueryUsers(packet)
@@ -975,6 +976,14 @@ end
 function client:requestUserList()
 	local msg = packet.new("UserList")
 	self:sendTCP(msg)
+end
+
+function client:requestACL(channel_id)
+	local channel_id = channel_id or 0 --default to root channel
+	local query = packet.new(13, proto.ACL())
+	query:set("channel_id", channel_id)
+	query:set("query", true)
+	self:sendTCP(query)
 end
 
 local COMMAND = {}
