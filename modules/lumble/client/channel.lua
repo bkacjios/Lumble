@@ -200,4 +200,11 @@ function channel:hasPermission(flag)
 	return self.client:hasPermission(self, flag)
 end
 
+function channel:requestACL()
+	local query = packet.new("ACL")
+	query:set("channel_id", self.channel_id)
+	query:set("query", true)
+	self:sendTCP(query)
+end
+
 return channel
