@@ -176,6 +176,24 @@ function channel:getLinks()
 	return self.links
 end
 
+function channel:link(...)
+	local msg = packet.new("ChannelState")
+	msg:set("channel_id", self.channel_id)
+	for _,c in ipairs({...}) do
+		msg:add("links_add", c.channel_id)
+	end
+	self:sendTCP(msg)
+end
+
+function channel:unlink(...)
+	local msg = packet.new("ChannelState")
+	msg:set("channel_id", self.channel_id)
+	for _,c in ipairs({...}) do
+		msg:add("links_remove", c.channel_id)
+	end
+	self:sendTCP(msg)
+end
+
 function channel:getDescription()
 	return self.description
 end
