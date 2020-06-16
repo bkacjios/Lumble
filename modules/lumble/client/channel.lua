@@ -225,4 +225,8 @@ function channel:requestACL()
 	self:sendTCP(query)
 end
 
+function channel:isEnterRestricted()
+	return self.is_enter_restricted
+end
+
 return channel

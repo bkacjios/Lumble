@@ -907,7 +907,10 @@ client:addCommand("dnd", function(client, user, cmd, args, raw)
 end):setHelp("Set the mood for D&D"):setUsage("<mood>"):alias("mood"):alias("music"):alias("ambience")
 
 client:addCommand("fade", function(client, user, cmd, args, raw)
-	client:getPlaying(tonumber(args[1]) or 1):fadeOut(tonumber(args[2]) or 5)
+	local channel = tonumber(args[1]) or 1
+	if client:isPlaying(channel) then
+		client:getPlaying(channel):fadeOut(tonumber(args[2]) or 5)
+	end
 end):setHelp("Fade out the current audio"):setUsage("[channel] [duration]")
 
 client:addCommand("endsession", function(client, user, cmd, args, raw)

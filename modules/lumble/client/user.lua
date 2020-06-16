@@ -110,19 +110,21 @@ function user:setSelfDeafened(bool)
 	self:sendTCP(msg)
 end
 
-function user:setServerMuted(bool)
+function user:setMuted(bool)
 	local msg = packet.new("UserState")
 	msg:set("session", self.session)
 	msg:set("mute", bool and true or false)
 	self:sendTCP(msg)
 end
+user.setMute = user.setMuted
 
-function user:setServerDeafened(bool)
+function user:setDeafened(bool)
 	local msg = packet.new("UserState")
 	msg:set("session", self.session)
 	msg:set("deaf", bool and true or false)
 	self:sendTCP(msg)
 end
+user.setDeaf = user.setDeafened
 
 function user:getURL()
 	return string.format("<a href='clientid://%s' class='log-user log-source'>%s</a>", self.hash, self.name)

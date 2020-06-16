@@ -927,6 +927,10 @@ function client:onSuggestConfig(packet)
 	self:hookCall("OnSuggestConfig")
 end
 
+function client:onPluginDataTransmission(packet)
+	self:hookCall("OnPluginData", event.new(self, packet, true))
+end
+
 function client:getHooks()
 	return self.hooks
 end

@@ -13,7 +13,9 @@ local permission = {
 		UserName = 8,
 		ChannelFull = 9,
 		NestingLimit = 10,
-		ChannelLimit = 11,
+		ChannelCountLimit = 11,
+		ChannelListenerLimit = 12,
+		UserListenerLimit = 13,
 	},
 	type_name = {
 		[0] = "Text",
@@ -27,7 +29,9 @@ local permission = {
 		[8] = "UserName",
 		[9] = "ChannelFull",
 		[10] = "NestingLimit",
-		[11] = "ChannelLimit",
+		[11] = "ChannelCountLimit",
+		[12] = "ChannelListenerLimit",
+		[13] = "UserListenerLimit",
 	},
 	enum = {
 		NONE = 0x0,
@@ -42,15 +46,17 @@ local permission = {
 		WHISPER = 0x100,
 		TEXT_MESSAGE = 0x200,
 		MAKE_TEMP_CHANNEL = 0x400,
+		LISTEN = 0x800,
 
 		-- Root channel only
 		KICK = 0x10000,
 		BAN = 0x20000,
 		REGISTER = 0x40000,
 		SELF_REGISTER = 0x80000,
+		RESET_USER_CONTENT = 0x100000,
 
 		CACHED = 0x8000000,
-		ALL = 0xf07ff,
+		ALL = 0x1F0FFF,
 	},
 	enum_name = {
 		[0x0] = "None",
