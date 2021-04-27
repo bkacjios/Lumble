@@ -9,6 +9,14 @@ local sizeof = ffi.sizeof
 local STREAM = {}
 STREAM.__index = STREAM
 
+local CHANNELS = 1
+local SAMPLE_RATE = 48000
+local ENCODED_BITRATE = 96000 --57000 --41100
+
+local DEFAULT_FRAMES = 1
+local MAX_FRAMES = 6
+local MAX_BUFFER_SIZE = MAX_FRAMES * SAMPLE_RATE * CHANNELS / 100
+
 local function AudioStream(path, volume, count)
 	local err = new('int[1]')
 	local vorbis = stb.stb_vorbis_open_filename(path, err, nil)
@@ -19,8 +27,8 @@ local function AudioStream(path, volume, count)
 		vorbis = vorbis,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
-		buffer = new('float[?]', 4096),
-		rebuffer = new('float[?]', 4096),
+		buffer = new('float[?]', MAX_BUFFER_SIZE),
+		rebuffer = new('float[?]', MAX_BUFFER_SIZE),
 		volume = volume or 1,
 		loop_count = count or 0,
 		talking_count = 0,

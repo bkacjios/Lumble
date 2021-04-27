@@ -73,9 +73,9 @@ end
 
 local STNDRD_TBL = {"st", "nd", "rd"}
 function math.stndrd(num)
-	num = num % 100
-	if num > 10 and num < 20 then
+	local n = num % 100
+	if n > 10 and n < 20 then
 		return num .. "th"
 	end
-	return num .. (STNDRD_TBL[num % 10] or "th")
+	return num .. (STNDRD_TBL[n % 10] or "th")
 end

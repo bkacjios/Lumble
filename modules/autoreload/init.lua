@@ -4,14 +4,10 @@ local reload = require("autoreload.reload")
 require("extensions.io")
 
 local autoreload = {
-	monitoring = {},
-	lastpoll = os.time(),
+	monitoring = {}
 }
 
 function autoreload.poll()
-	if autoreload.lastpoll > os.time() then return end
-	autoreload.lastpoll = os.time() + 1
-
 	for module, info in pairs(autoreload.monitoring) do
 		local changed = lfs.attributes(info.file, "modification")
 		if info.changed ~= changed then

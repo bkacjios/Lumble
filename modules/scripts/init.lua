@@ -19,7 +19,124 @@ local client = mumble.getClient("::1", 64738, params)
 if not client then return end 
 client:auth("LuaBot", "dix", {"dnd", "hedoesntevenknow", })
 
-client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
+client:hook("OnUserStartSpeaking", function(client, user)
+	--print("START SPEAKING", user)
+	user.speech_last = client:getTime()
+	user.speech_delay_last = 0
+	user.speech_delay_prev = 0
+	user.speech_delay_avg = 0
+	user.speech_delay_highest = 0
+end)
+
+local function roundToNearestEvenTenth(num)
+	-- Convert 0.01 to 1, 0.02 to 2 and so on..
+	local tenth = num * 100
+	local rounded = math.floor(tenth + 0.5)
+
+	-- If it's an odd number and greater than 1
+	-- This fixes times like 0.03
+	if rounded > 1 and rounded % 2 == 1 then
+		-- Round to closest even number
+		if tenth >= rounded then
+			rounded = math.ceil(tenth + 0.5)
+		else
+			rounded = math.floor(tenth - 0.5)
+		end
+	end
+
+	return rounded / 100
+end
+
+function math.sineBetween(min, max, t)
+    local halfRange = (max - min) / 2
+    return min + halfRange + math.sin(t) * halfRange
+end
+
+local lastDay = tonumber(os.date("%w"))
+
+client:hook("OnPing", function(client, ms)
+	local day = tonumber(os.date("%w"))
+
+	if day ~= lastDay then
+		lastDay = day
+		log.info("Date changed: %s", os.date("%a, %b %d %Y"))
+	end
+end)
+
+client:hook("OnUserSpeak", function(client, event)
+	local t = client:getTime()
+
+	local user = event.user
+
+	-- Round to nearest tenth
+	local delay = roundToNearestEvenTenth(t - user.speech_last)
+	-- delay = time between each packet
+
+	if delay ~= 0 then
+		user.speech_delay_prev = user.speech_delay_last
+		user.speech_delay_last = delay
+	
+		if user.speech_delay_last ~= 0 and user.speech_delay_prev ~= 0 then
+			user.speech_delay_avg = (user.speech_delay_prev + delay) / 2
+		else
+			user.speech_delay_avg = delay
+		end
+	end
+
+	if delay > user.speech_delay_highest then
+		user.speech_delay_highest = delay
+	end
+
+	--print(delay, user.speech_delay_avg)
+
+	user.speech_last = t
+end)
+
+client:hook("OnUserStopSpeaking", function(client, user)
+	--print("END SPEAKING", user)
+	--print("Delay: ", user.speech_delay_highest)
+end)
+
+local start = -math.pi/2
+local inc = math.pi/5
+local pos = start
+
+local channelsounds = {
+	[3] = "audio/soundboard/dotes.ogg", -- Dota2
+	[4] = "audio/soundboard/midas.ogg", -- CIV VI
+	[29] = "audio/soundboard/absoluteclassic.ogg", -- An Absolute Classic
+	[33] = "audio/soundboard/woaw.ogg", -- WoW of Worldcraft
+	[40] = "audio/soundboard/boom.ogg", -- BOOM TETRIS
+	[41] = "audio/soundboard/n64.ogg", -- Nintenies
+	[47] = "audio/soundboard/hands.ogg", -- Deepthroat Galactic
+	[48] = "audio/soundboard/pooters.ogg", -- Cum
+	[49] = { -- With You
+		"audio/withyou_short-1.ogg",
+		"audio/withyou_short-2.ogg",
+	},
+}
+
+local function handleChannelSounds(client, event)
+	local imoved = client.me == event.user
+	local mychan = imoved and event.channel or client.me:getChannel()
+	local cid = mychan:getID()
+
+	local cnlsnd = channelsounds[cid]
+
+	if imoved or (cnlsnd and event.channel == mychan) then
+		local tp = type(cnlsnd)
+		if tp == "table" then
+			client:playOgg(cnlsnd[math.random(1,#cnlsnd)])
+		elseif tp == "string" then
+			client:playOgg(cnlsnd)
+		end
+	end
+end
+
+client:hook("OnUserConnected", "LuaBot - Channel Sounds [Connecting]", handleChannelSounds)
+client:hook("OnUserChannel", "LuaBot - Channel Sounds [Channel]", handleChannelSounds)
+
+--[[client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
 	if event.channel ~= client.me:getChannel() then return end
 
 	local day = tonumber(os.date("%w"))
@@ -33,19 +150,21 @@ client:hook("OnUserChannel", "LuaBot - DND Alerts", function(client, event)
 			client.me:getChannel():message("%s is %d minutes late for DND", event.user:getName(), minute)
 		end
 	end
-end)
+end)]]
 
 client:hook("OnUserChannel", "LuaBot - OS Channels", function(client, event)
 	local linux = client:getChannel("Linux")
 	local windows = client:getChannel("Windows")
 
-	local os_version = event.user:getStats()["version"]["os_version"]
+	if event.channel == linux or event.channel == windows then
+		local os_version = event.user:getStats()["version"]["os_version"]
 
-	if event.user == client.me then return end
+		if event.user == client.me then return end
 
-	if (event.channel == linux and not string.find(os_version:lower(), "linux", 1, true)) or 
-		(event.channel == windows and not string.find(os_version:lower(), "win", 1, true)) then
-		event.user:move(event.user:getPreviousChannel())
+		if (event.channel == linux and not string.find(os_version:lower(), "linux", 1, true)) or 
+			(event.channel == windows and not string.find(os_version:lower(), "win", 1, true)) then
+			event.user:move(event.user:getPreviousChannel())
+		end
 	end
 end)
 
@@ -91,11 +210,17 @@ client:hook("OnUserState", "Alone Checker", function(client, event)
 end)
 
 client:hook("OnUserState", "Muted - AFK", function(client, event)
+	if event.self_mute == nil or event.self_deaf == nil then return end
+
 	local user = event.user
 	local root = client:getChannelRoot():getName()
 	local afk = client:getChannel(config.afk.channel[root] or "AFK")
 
-	if event.self_deaf == true then
+	if user:getName():lower() == "davey" then
+		afk = client:getChannel("Davis Speaks to the Preacher")
+	end
+
+	if event.self_mute == true and event.self_deaf == true then
 		user:move(afk)
 	elseif event.self_deaf == false and user:getPreviousChannel() ~= afk then
 		user:move(user:getPreviousChannel())
@@ -137,6 +262,17 @@ end)
 
 lua.install(client)
 afk.install(client)
+
+
+client:addCommand("replay", function(client, user, cmd, args, raw)
+	local f = io.open(("audio/replay/%s.rec"):format(user:getHash()), "rb")
+	if not f then return end
+	local size = f:seek("end")
+	local time = client.audio_frames * 480 * 100 * 3
+	local pos = math.max(0, size - time)
+	f:seek("set", pos)
+	client.recording_playback = f
+end)
 
 client:addCommand("summon", function(client, user, cmd, args, raw)
 	client.me:move(user:getChannel())

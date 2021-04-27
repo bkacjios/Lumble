@@ -33,6 +33,8 @@ local SAMPLE_RATE = 48000
 local ENCODED_BITRATE = 96000 --57000 --41100
 
 local DEFAULT_FRAMES = 1
+local MAX_FRAMES = 6
+local MAX_BUFFER_SIZE = MAX_FRAMES * SAMPLE_RATE * CHANNELS / 100
 
 local UDP_CELT_ALPHA = 0
 local UDP_PING = 1
@@ -41,6 +43,9 @@ local UDP_CELT_BETA = 3
 local UDP_OPUS = 4
 
 local MAX_UDP_BUFFER = 1024
+
+local MAX_RECORD_SECONDS = 60
+local MAX_RECORD_FRAMES = SAMPLE_RATE * 1000 * MAX_RECORD_SECONDS / 1000
 
 local bor = bit.bor
 local band = bit.band
@@ -69,9 +74,14 @@ function client.new(host, port, params)
 	encoder:set("vbr", 0)
 	encoder:set("bitrate", 96000)
 
+	local decoder = opus.Decoder(SAMPLE_RATE, CHANNELS)
+	--decoder:set("vbr", 0)
+	--decoder:set("bitrate", 96000)
+
 	local object = {
 		crypt = ocbaes128.new(),
 		encoder = encoder,
+		decoder = decoder,
 		tcp = tcp,
 		udp = udp,
 		host = host,
@@ -81,12 +91,10 @@ function client.new(host, port, params)
 			resync = 0,
 			udp_packets = 0,
 			udp_ping_acc = 0,
-			udp_ping_total = 0,
 			udp_ping_avg = 0,
 			udp_ping_var = 0,
 			tcp_packets = 0,
 			tcp_ping_acc = 0,
-			tcp_ping_total = 0,
 			tcp_ping_avg = 0,
 			tcp_ping_var = 0,
 		},
@@ -116,8 +124,10 @@ function client.new(host, port, params)
 		audio_streams = {},
 		audio_volume = 0.5,
 		audio_frames = DEFAULT_FRAMES,
-		audio_buffer = ffi.new('float[?]', DEFAULT_FRAMES * SAMPLE_RATE / 100),
+		audio_buffer = ffi.new('float[?]', MAX_BUFFER_SIZE),
+		audio_debuffer = ffi.new('float[?]', MAX_BUFFER_SIZE),
 		audio_sequence = 0,
+		audio_target = 0,
 	}
 
 	-- Create an event using the sockets file desciptor for when client is ready to read data
@@ -205,7 +215,7 @@ function client:createAudioStream(bitspersec)
 		log.debug("Server maximum network bandwidth is only %d kbit/s. Audio quality auto-adjusted to %d kbit/s (%d ms)", bitspersec / 1000, bitrate / 1000, frames * 10)
 		self.audio_frames = frames
 		self.encoder:set("bitrate", bitrate)
-		self.audio_buffer = ffi.new('float[?]', frames * SAMPLE_RATE / 100)
+		self.audio_buffer = ffi.new('float[?]', frames * SAMPLE_RATE * CHANNELS / 100)
 	end
 
 	-- Get the length of our timer for the audio stream..
@@ -373,7 +383,16 @@ function client:pingUDP()
 	self.ping.udp_ping_acc = self.ping.udp_ping_acc + 1
 end
 
-local record = io.open("data.vorbis", "wba")
+local speakingEvent = {}
+
+local function writeShort(f, short)
+	-- Convert our 16 bit number into two bytes
+	local b1 = bit.band(bit.rshift(short, 8), 0xFF)
+	local b2 = bit.band(short, 0xFF)
+	f:write(string.char(b1, b2))
+end
+
+local playbackf = assert(io.open("playback.vorbis", "ab"))
 
 function client:receiveVoiceData(packet, codec, target)
 	local session = packet:readMumbleVarInt()
@@ -383,16 +402,20 @@ function client:receiveVoiceData(packet, codec, target)
 
 	local talking = false
 
+	local data = ""
+
 	if codec == UDP_SPEEX or codec == UDP_CELT_ALPHA or codec == UDP_CELT_BETA then
 		local header = packet:readByte()
 		talking = band(header, 0x80) ~= 0x80
+
+		data = packet:readAll()
 	elseif codec == UDP_OPUS then
 		local header = packet:readMumbleVarInt()
 
 		local len = band(header, 0x1FFF)
 		talking = band(header, 0x2000) ~= 0x2000
 
-		--record:write(packet:toString())
+		data = packet:readAll()
 
 		--[[local b = self:createAudioPacket(UDP_OPUS, target, sequence)
 
@@ -402,16 +425,64 @@ function client:receiveVoiceData(packet, codec, target)
 		b:write(all)
 
 		self:sendAudioPacket(b)]]
-
-		--record:write(all)
 	end
+
+	local state_change = false
+	local oneframespeak = (user.talking == false and talking == false)
 
 	if user.talking ~= talking then
 		user.talking = talking
+		state_change = true
 		for i=1,2 do
 			if self.audio_streams[i] then
 				self.audio_streams[i]:setUserTalking(talking)
 			end
+		end
+	end
+
+	local t = self:getTime()
+
+	if oneframespeak or state_change and user.talking then
+		self:hookCall("OnUserStartSpeaking", user)
+		speakingEvent.last_packet = t
+		--user.recording = assert(io.open(("audio/replay/%s.rec"):format(user:getHash()), "ab"))
+	end
+
+	speakingEvent.codec = codec
+	speakingEvent.target = target
+	speakingEvent.sequence = sequence
+	speakingEvent.user = user
+	speakingEvent.speaking = user.talking
+	speakingEvent.data = data
+	speakingEvent.delay = t - speakingEvent.last_packet
+	speakingEvent.last_packet = t
+
+	--print("asd", speakingEvent.delay * 100, math.floor(speakingEvent.delay * 100 + 0.5) / 100)
+
+	self:hookCall("OnUserSpeak", speakingEvent)
+
+	--[[if playbackf then
+		local decoded, decoded_len = self.decoder:decode(data, #data, MAX_BUFFER_SIZE)
+
+		for i=0,decoded_len-1 do
+			-- Mix all virtual audio channels together in the buffer
+			self.audio_debuffer[i] = self.audio_debuffer[i] + decoded[i]
+		end
+
+		local data = ffi.string(decoded, decoded_len*4)
+		--playbackf:write()
+	end]]
+
+	--[[if user.recording then
+		local decoded, decoded_len = self.decoder:decode(data, #data, MAX_BUFFER_SIZE)
+		local data = ffi.string(decoded, decoded_len*4)
+		user.recording:write(data) -- Save the entire data
+	end]]
+
+	if oneframespeak or state_change and not user.talking then
+		self:hookCall("OnUserStopSpeaking", user)
+		if user.recording then
+			user.recording:close()
 		end
 	end
 end
@@ -452,9 +523,9 @@ function client:readudp()
 				local time = math.floor(self:getTime() * 1000)
 				local ms = (time - timestamp)
 
-				self.ping.udp_packets = self.ping.udp_packets + 1
-				self.ping.udp_ping_total = self.ping.udp_ping_total + ms
-				self.ping.udp_ping_avg = self.ping.udp_ping_total / self.ping.udp_packets
+				local n = self.ping.udp_packets + 1
+				self.ping.udp_packets = n
+				self.ping.udp_ping_avg = self.ping.udp_ping_avg * (n-1)/n + ms/n
 				self.ping.udp_ping_var = math.abs(ms - self.ping.udp_ping_avg) ^ 2
 				self.ping.udp_ping_acc = self.ping.udp_ping_acc - 1
 
@@ -546,11 +617,76 @@ function client:isPlaying(channel)
 	return self.audio_streams[channel or 1] ~= nil
 end
 
+local function readShort(f)
+	local short = f:read(2) -- Read two characters from the file
+	if not short or short == "" then return end -- End of file
+	local b1, b2 = string.byte(short, 2, 1) -- Convert the two characters to bytes
+	return bit.bor(bit.lshift(b1, 8), bit.lshift(b2, 0)) -- Combine the two bytes into a number
+end
+
+local function readShort(f)
+	local short = f:read(2) -- Read two characters from the file
+	if not short or short == "" then return end -- End of file
+	local b1, b2 = string.byte(short, 1, 2) -- Convert the two characters to bytes
+	return bit.bor(bit.lshift(b1, 8), bit.lshift(b2, 0)) -- Combine the two bytes into a number
+end
+
+--[[local function to16bitFloat(b1, b2)
+	local intVal = BitConverter.ToInt32(new byte[] { HO, LO, 0, 0 }, 0);
+
+	local mant = intVal & 0x03ff
+	local exp = intVal & 0x7c00
+	if (exp == 0x7c00) then
+		exp = 0x3fc00
+	elseif (exp != 0) then
+		exp += 0x1c000;
+		if (mant == 0 && exp > 0x1c400) then
+			return BitConverter.ToSingle(BitConverter.GetBytes((intVal & 0x8000) << 16 | exp << 13 | 0x3ff), 0);
+		end
+	elseif (mant != 0) then
+		exp = 0x1c400
+		do
+		{
+			mant <<= 1;
+			exp -= 0x400;
+		} while ((mant & 0x400) == 0);
+		mant &= 0x3ff;
+	end
+	return BitConverter.ToSingle(BitConverter.GetBytes((intVal & 0x8000) << 16 | (exp | mant) << 13), 0);
+end]]
+
+local floatconversion = ffi.new("union { char b[4]; float f; }")
+
 function client:streamAudio()
 	local biggest_pcm_size = 0
 
 	-- Reset the buffer to all 0's
 	ffi.fill(self.audio_buffer, ffi.sizeof(self.audio_buffer))
+
+	if self.recording_playback then
+		local pcm = self.recording_playback:read(self.audio_frames * 480 * 4)
+		if pcm and pcm ~= "" then
+			if #pcm/4 > biggest_pcm_size then
+				-- We need to save the biggest PCM data for later.
+				-- If we didn't do this, we could be cutting off some audio if one
+				-- stream ends while another is still playing.
+				biggest_pcm_size = #pcm/4
+			end
+
+			local i = 0
+			local int
+
+			for j=0,#pcm-1, 4 do
+				int = string.sub(pcm, j+1, j+4)
+				floatconversion.b = int
+				i = i + 1
+				self.audio_buffer[i] = self.audio_buffer[i] + floatconversion.f * self.audio_volume
+			end
+		else
+			self.recording_playback:close()
+			self.recording_playback = nil
+		end
+	end
 
 	-- Loop through each channel of audio and mix them together with simple addition.
 	for channel, stream in pairs(self.audio_streams) do
@@ -645,9 +781,9 @@ function client:onPing(packet)
 	local time = math.floor(self:getTime() * 1000)
 	local ms = (time - packet.timestamp)
 
-	self.ping.tcp_packets = self.ping.tcp_packets + 1
-	self.ping.tcp_ping_total = self.ping.tcp_ping_total + ms
-	self.ping.tcp_ping_avg = self.ping.tcp_ping_total / self.ping.tcp_packets
+	local n = self.ping.tcp_packets + 1
+	self.ping.tcp_packets = n
+	self.ping.tcp_ping_avg = self.ping.tcp_ping_avg * (n-1)/n + ms/n
 	self.ping.tcp_ping_var = math.abs(ms - self.ping.tcp_ping_avg) ^ 2
 	self.ping.tcp_ping_acc = self.ping.tcp_ping_acc - 1
 
@@ -685,7 +821,8 @@ function client:onServerSync(packet)
 end
 
 function client:onChannelRemove(packet)
-	if packet.temporary then
+	local channel = self.channels[packet.channel_id]
+	if channel.temporary then
 		log.info("Temporary channel %s removed", channel)
 	else
 		log.info("Channel %s removed", channel)
@@ -745,7 +882,7 @@ function client:onUserState(packet)
 		evnt = event.new(self, packet, true)
 
 		if self.synced then
-			--log.info("%s connected", user)
+			log.info("%s connected", user)
 			self:hookCall("OnUserConnected", evnt)
 		end
 	else
@@ -759,10 +896,10 @@ function client:onUserState(packet)
 		evnt.channel_prev = channel
 		user.channel_id_prev = user.channel_id
 
-		if evnt.actor ~= user then
-			log.info("%s moved to %s by %s", user, evnt.channel, evnt.actor)
-		else
+		if evnt.actor == user then
 			log.info("%s moved to %s", user, evnt.channel)
+		else
+			log.info("%s moved to %s by %s", user, evnt.channel, evnt.actor or "the server")
 		end
 
 		self:hookCall("OnUserChannel", evnt)
@@ -988,6 +1125,15 @@ function client:requestACL(channel_id)
 	query:set("channel_id", channel_id)
 	query:set("query", true)
 	self:sendTCP(query)
+end
+
+function client:registerVoiceTarget(target_id, ...)
+	local register = packet.new("VoiceTarget")
+	register:set("id", target_id)
+	for k,v in pairs({...}) do
+		register:add("targets", targets)
+	end
+	self:sendTCP(register)
 end
 
 local COMMAND = {}

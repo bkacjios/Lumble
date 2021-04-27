@@ -9,14 +9,21 @@ typedef uint16_t opus_uint16;
 typedef uint32_t opus_uint32;
 
 typedef struct OpusEncoder OpusEncoder;
+typedef struct OpusDecoder OpusDecoder;
 
-int opus_encoder_get_size(int channels);
 OpusEncoder *opus_encoder_create(opus_int32 Fs, int channels, int application, int *error);
 int opus_encoder_init(OpusEncoder *st, opus_int32 Fs, int channels, int application);
 opus_int32 opus_encode(OpusEncoder *st, const opus_int16 *pcm, int frame_size, unsigned char *data, opus_int32 max_data_bytes);
 opus_int32 opus_encode_float(OpusEncoder *st, const float *pcm, int frame_size, unsigned char *data, opus_int32 max_data_bytes);
 void opus_encoder_destroy(OpusEncoder *st);
 int opus_encoder_ctl(OpusEncoder *st, int request, ...);
+
+OpusDecoder *opus_decoder_create(opus_int32 Fs, int channels, int *error);
+int opus_decoder_init(OpusDecoder *st, opus_int32 Fs, int channels);
+int opus_decode(OpusDecoder *st, const unsigned char *data, int len, opus_int16 *pcm, int frame_size, int decode_fec);
+int opus_decode_float(OpusDecoder *st, const unsigned char *data, int len, float *pcm, int frame_size, int decode_fec);
+void opus_decoder_destroy(OpusDecoder *st);
+int opus_decoder_ctl(OpusDecoder *st, int request,...);
 
 const char *opus_strerror(int error);
 const char *opus_get_version_string(void);
@@ -125,6 +132,57 @@ function Encoder:reset()
 	return ret
 end
 
+
+local Decoder = {}
+Decoder.__index = Decoder
+
+function Decoder:__new(sample_rate, channels)
+	local err = int_ptr()
+	local state = lib.opus_decoder_create(sample_rate, channels, err)
+	if err[0] < 0 then return throw(err[0]) end
+
+	err = lib.opus_decoder_init(state, sample_rate, channels)
+	if err < 0 then return throw(err) end
+
+	gc(state, lib.opus_decoder_destroy)
+
+	return state
+end
+
+function Decoder:decode(encoded, encoded_len, max_data_bytes)
+	local data = new("float[?]", max_data_bytes)
+	local ret = lib.opus_decode_float(self, encoded, encoded_len, data, max_data_bytes, 0)
+	if ret < 0 then return throw(ret) end
+
+	return data, ret
+end
+
+function Decoder:set(name, value)
+	if type(value) ~= 'number' then return throw(-1) end
+	local id = encoder_set[name]
+	if not id then return error("invalid set name '" .. name .. "'") end
+	local ret = lib.opus_decoder_ctl(self, id, opus_int32(value))
+	if ret < 0 and ret ~= -1000 then return throw(ret) end
+	return ret
+end
+
+function Decoder:get(name)
+	local id = encoder_get[name]
+	if not id then return error("invalid get name '" .. name .. "'") end
+	local ret = opus_int32_ptr()
+	lib.opus_decoder_ctl(self, id, ret)
+	ret = ret[0]
+	if ret < 0 and ret ~= -1000 then return throw(ret) end
+	return ret
+end
+
+function Decoder:reset()
+	local ret = lib.opus_decoder_ctl(self, 4028)
+	if ret < 0 and ret ~= -1000 then return throw(ret) end
+	return ret
+end
+
 return {
 	Encoder = ffi.metatype("OpusEncoder", Encoder),
+	Decoder = ffi.metatype("OpusDecoder", Decoder),
 }
