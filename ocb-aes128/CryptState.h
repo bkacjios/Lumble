@@ -37,7 +37,7 @@
 #define AES_KEY_SIZE_BITS   128
 #define AES_KEY_SIZE_BYTES  (AES_KEY_SIZE_BITS/8)
 
-class CryptState {
+class CryptStateOCB2 {
 	private:
 		unsigned char raw_key[AES_KEY_SIZE_BYTES];
 		unsigned char encrypt_iv[AES_BLOCK_SIZE];
@@ -54,7 +54,7 @@ class CryptState {
 		bool bInit;
 
 	public:
-		CryptState();
+		CryptStateOCB2();
 
 		bool isValid() const;
 		void genKey();
