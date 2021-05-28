@@ -1,32 +1,7 @@
-/* Copyright (C) 2005-2010, Thorvald Natvig <thorvald@natvig.com>
-
-   All rights reserved.
-
-   Redistribution and use in source and binary forms, with or without
-   modification, are permitted provided that the following conditions
-   are met:
-
-   - Redistributions of source code must retain the above copyright notice,
-     this list of conditions and the following disclaimer.
-   - Redistributions in binary form must reproduce the above copyright notice,
-     this list of conditions and the following disclaimer in the documentation
-     and/or other materials provided with the distribution.
-   - Neither the name of the Mumble Developers nor the names of its
-     contributors may be used to endorse or promote products derived from this
-     software without specific prior written permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-   ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-   A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR
-   CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-   EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-   PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-   PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// Copyright 2020-2021 The Mumble Developers. All rights reserved.
+// Use of this source code is governed by a BSD-style license
+// that can be found in the LICENSE file at the root of the
+// Mumble source tree or at <https://www.mumble.info/LICENSE>.
 
 /*
  * This code implements OCB-AES128.
@@ -43,7 +18,6 @@
 #include <stdint.h>
 #include <string.h>
 
-
 CryptState::CryptState() {
 	for (int i=0;i<0x100;i++)
 		decrypt_history[i] = 0;
@@ -52,7 +26,6 @@ CryptState::CryptState() {
 	memset(encrypt_iv, 0, AES_BLOCK_SIZE);
 	memset(decrypt_iv, 0, AES_BLOCK_SIZE);
 	uiGood=uiLate=uiLost=uiResync=0;
-	uiRemoteGood=uiRemoteLate=uiRemoteLost=uiRemoteResync=0;
 }
 
 bool CryptState::isValid() const {
@@ -68,29 +41,53 @@ void CryptState::genKey() {
 	bInit = true;
 }
 
-void CryptState::setKey(const unsigned char *rkey, const unsigned char *eiv, const unsigned char *div) {
-	memcpy(raw_key, rkey, AES_KEY_SIZE_BYTES);
-	memcpy(encrypt_iv, eiv, AES_BLOCK_SIZE);
-	memcpy(decrypt_iv, div, AES_BLOCK_SIZE);
-	AES_set_encrypt_key(raw_key, AES_KEY_SIZE_BITS, &encrypt_key);
-	AES_set_decrypt_key(raw_key, AES_KEY_SIZE_BITS, &decrypt_key);
-	bInit = true;
+bool CryptState::setKey(const std::string &rkey, const std::string &eiv, const std::string &div) {
+	if (rkey.length() == AES_KEY_SIZE_BYTES && eiv.length() == AES_BLOCK_SIZE && div.length() == AES_BLOCK_SIZE) {
+		memcpy(raw_key, rkey.data(), AES_KEY_SIZE_BYTES);
+		memcpy(encrypt_iv, eiv.data(), AES_BLOCK_SIZE);
+		memcpy(decrypt_iv, div.data(), AES_BLOCK_SIZE);
+		AES_set_encrypt_key(raw_key, AES_KEY_SIZE_BITS, &encrypt_key);
+		AES_set_decrypt_key(raw_key, AES_KEY_SIZE_BITS, &decrypt_key);
+		bInit = true;
+		return true;
+	}
+	return false;
 }
 
-void CryptState::setDecryptIV(const unsigned char *iv) {
-	memcpy(decrypt_iv, iv, AES_BLOCK_SIZE);
+bool CryptState::setRawKey(const std::string &rkey) {
+	if (rkey.length() == AES_KEY_SIZE_BYTES) {
+		memcpy(raw_key, rkey.data(), AES_KEY_SIZE_BYTES);
+		return true;
+	}
+	return false;
 }
 
-unsigned char* CryptState::getKey() {
-	return raw_key;
+bool CryptState::setEncryptIV(const std::string &iv) {
+	if (iv.length() == AES_BLOCK_SIZE) {
+		memcpy(encrypt_iv, iv.data(), AES_BLOCK_SIZE);
+		return true;
+	}
+	return false;
 }
 
-unsigned char* CryptState::getEncryptIV() {
-	return encrypt_iv;
+bool CryptState::setDecryptIV(const std::string &iv) {
+	if (iv.length() == AES_BLOCK_SIZE) {
+		memcpy(decrypt_iv, iv.data(), AES_BLOCK_SIZE);
+		return true;
+	}
+	return false;
 }
 
-unsigned char* CryptState::getDecryptIV() {
-	return decrypt_iv;
+std::string CryptState::getRawKey() {
+	return std::string(reinterpret_cast< const char * >(raw_key), AES_KEY_SIZE_BYTES);
+}
+
+std::string CryptState::getEncryptIV() {
+	return std::string(reinterpret_cast< const char * >(encrypt_iv), AES_BLOCK_SIZE);
+}
+
+std::string CryptState::getDecryptIV() {
+	return std::string(reinterpret_cast< const char * >(decrypt_iv), AES_BLOCK_SIZE);
 }
 
 unsigned int CryptState::getGood() {
@@ -105,7 +102,7 @@ unsigned int CryptState::getLost() {
 	return uiLost;
 }
 
-void CryptState::encrypt(const unsigned char *source, unsigned char *dst, unsigned int plain_length) {
+bool CryptState::encrypt(const unsigned char *source, unsigned char *dst, unsigned int plain_length) {
 	unsigned char tag[AES_BLOCK_SIZE];
 
 	// First, increase our IV.
@@ -113,12 +110,15 @@ void CryptState::encrypt(const unsigned char *source, unsigned char *dst, unsign
 		if (++encrypt_iv[i])
 			break;
 
-	ocb_encrypt(source, dst+4, plain_length, encrypt_iv, tag);
+	if (!ocb_encrypt(source, dst+4, plain_length, encrypt_iv, tag)) {
+		return false;
+	}
 
 	dst[0] = encrypt_iv[0];
 	dst[1] = tag[0];
 	dst[2] = tag[1];
 	dst[3] = tag[2];
+	return true;
 }
 
 bool CryptState::decrypt(const unsigned char *source, unsigned char *dst, unsigned int crypted_length) {
@@ -194,9 +194,9 @@ bool CryptState::decrypt(const unsigned char *source, unsigned char *dst, unsign
 		}
 	}
 
-	ocb_decrypt(source+4, dst, plain_length, decrypt_iv, tag);
+	bool ocb_success = ocb_decrypt(source+4, dst, plain_length, decrypt_iv, tag);
 
-	if (memcmp(tag, source+1, 3) != 0) {
+	if (ocb_success || memcmp(tag, source+1, 3) != 0) {
 		memcpy(decrypt_iv, saveiv, AES_BLOCK_SIZE);
 		return false;
 	}
@@ -261,19 +261,49 @@ static void inline ZERO(keyblock &block) {
 #define AESencrypt(src,dst,key) AES_encrypt(reinterpret_cast<const unsigned char *>(src),reinterpret_cast<unsigned char *>(dst), key);
 #define AESdecrypt(src,dst,key) AES_decrypt(reinterpret_cast<const unsigned char *>(src),reinterpret_cast<unsigned char *>(dst), key);
 
-void CryptState::ocb_encrypt(const unsigned char *plain, unsigned char *encrypted, unsigned int len, const unsigned char *nonce, unsigned char *tag) {
+bool CryptState::ocb_encrypt(const unsigned char *plain, unsigned char *encrypted, unsigned int len, const unsigned char *nonce, unsigned char *tag, bool modifyPlainOnXEXStarAttack) {
 	keyblock checksum, delta, tmp, pad;
+	bool success = true;
 
 	// Initialize
 	AESencrypt(nonce, delta, &encrypt_key);
 	ZERO(checksum);
 
 	while (len > AES_BLOCK_SIZE) {
+		// Counter-cryptanalysis described in section 9 of https://eprint.iacr.org/2019/311
+		// For an attack, the second to last block (i.e. the last iteration of this loop)
+		// must be all 0 except for the last byte (which may be 0 - 128).
+		bool flipABit = false; // *plain is const, so we can't directly modify it
+		if (len - AES_BLOCK_SIZE <= AES_BLOCK_SIZE) {
+			unsigned char sum = 0;
+			for (int i = 0; i < AES_BLOCK_SIZE - 1; ++i) {
+				sum |= plain[i];
+			}
+			if (sum == 0) {
+				if (modifyPlainOnXEXStarAttack) {
+					// The assumption that critical packets do not turn up by pure chance turned out to be incorrect
+					// since digital silence appears to produce them in mass.
+					// So instead we now modify the packet in a way which should not affect the audio but will
+					// prevent the attack.
+					flipABit = true;
+				} else {
+					// This option still exists but only to allow us to test ocb_decrypt's detection.
+					success = false;
+				}
+			}
+		}
 		S2(delta);
 		XOR(tmp, delta, reinterpret_cast<const subblock *>(plain));
+		if (flipABit) {
+			*reinterpret_cast< unsigned char * >(tmp) ^= 1;
+		}
 		AESencrypt(tmp, tmp, &encrypt_key);
 		XOR(reinterpret_cast<subblock *>(encrypted), delta, tmp);
 		XOR(checksum, checksum, reinterpret_cast<const subblock *>(plain));
+		if (flipABit) {
+			*reinterpret_cast< unsigned char * >(checksum) ^= 1;
+		}
+
 		len -= AES_BLOCK_SIZE;
 		plain += AES_BLOCK_SIZE;
 		encrypted += AES_BLOCK_SIZE;
@@ -293,10 +323,13 @@ void CryptState::ocb_encrypt(const unsigned char *plain, unsigned char *encrypte
 	S3(delta);
 	XOR(tmp, delta, checksum);
 	AESencrypt(tmp, tag, &encrypt_key);
+
+	return success;
 }
 
-void CryptState::ocb_decrypt(const unsigned char *encrypted, unsigned char *plain, unsigned int len, const unsigned char *nonce, unsigned char *tag) {
+bool CryptState::ocb_decrypt(const unsigned char *encrypted, unsigned char *plain, unsigned int len, const unsigned char *nonce, unsigned char *tag) {
 	keyblock checksum, delta, tmp, pad;
+	bool success = true;
 
 	// Initialize
 	AESencrypt(nonce, delta, &encrypt_key);
@@ -324,9 +357,20 @@ void CryptState::ocb_decrypt(const unsigned char *encrypted, unsigned char *plai
 	XOR(checksum, checksum, tmp);
 	memcpy(plain, tmp, len);
 
+	// Counter-cryptanalysis described in section 9 of https://eprint.iacr.org/2019/311
+	// In an attack, the decrypted last block would need to equal `delta ^ len(128)`.
+	// With a bit of luck (or many packets), smaller values than 128 (i.e. non-full blocks) are also
+	// feasible, so we check `tmp` instead of `plain`.
+	// Since our `len` only ever modifies the last byte, we simply check all remaining ones.
+	if (memcmp(tmp, delta, AES_BLOCK_SIZE - 1) == 0) {
+		success = false;
+	}
+
 	S3(delta);
 	XOR(tmp, delta, checksum);
 	AESencrypt(tmp, tag, &encrypt_key);
+
+	return success;
 }
 
 

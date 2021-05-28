@@ -3,6 +3,7 @@ client.__index = client
 
 local channel = require("lumble.client.channel")
 local cuser = require("lumble.client.user")
+local target = require("lumble.client.target")
 
 local permission = require("lumble.permission")
 local packet = require("lumble.packet")
@@ -122,7 +123,7 @@ function client.new(host, port, params)
 		commands = {},
 		start = socket.gettime(),
 		audio_streams = {},
-		audio_volume = 0.5,
+		audio_volume = 0.35,
 		audio_frames = DEFAULT_FRAMES,
 		audio_buffer = ffi.new('float[?]', MAX_BUFFER_SIZE),
 		audio_debuffer = ffi.new('float[?]', MAX_BUFFER_SIZE),
@@ -335,8 +336,11 @@ function client:sendTCP(packet)
 end
 
 function client:sendUDP(packet)
-	log.trace("Send UDP %s to server", packet)
-	return self.udp:send(self.crypt:encrypt(packet:toString()))
+	local succ, encrypted = self.crypt:encrypt(packet:toString())
+	if succ then
+		log.trace("Send encrypted UDP %s to server", packet)
+		return self.udp:send(encrypted)
+	end
 end
 
 function client:sendAudioPacket(packet)
@@ -353,10 +357,14 @@ function client:getTime()
 	return socket.gettime() - self.start
 end
 
+function client:getTimestamp()
+	return math.floor(self:getTime() * 1000)
+end
+
 function client:pingTCP()
 	local ping = packet.new("Ping")
 
-	ping:set("timestamp", math.floor(self:getTime() * 1000))
+	ping:set("timestamp", self:getTimestamp())
 	ping:set("tcp_packets", self.ping.tcp_packets)
 	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
 	ping:set("tcp_ping_var", self.ping.tcp_ping_avg)
@@ -378,7 +386,7 @@ end
 function client:pingUDP()
 	local b = buffer()
 	b:writeByte(lshift(UDP_PING, 5))
-	b:writeMumbleVarInt(math.floor(self:getTime() * 1000))
+	b:writeMumbleVarInt(self:getTimestamp())
 	self:sendUDP(b)
 	self.ping.udp_ping_acc = self.ping.udp_ping_acc + 1
 end
@@ -519,8 +527,7 @@ function client:readudp()
 
 			if id == UDP_PING then
 				local timestamp = b:readMumbleVarInt()
-
-				local time = math.floor(self:getTime() * 1000)
+				local time = self:getTimestamp()
 				local ms = (time - timestamp)
 
 				local n = self.ping.udp_packets + 1
@@ -778,7 +785,8 @@ function client:onAuthenticate(packet)
 end
 
 function client:onPing(packet)
-	local time = math.floor(self:getTime() * 1000)
+	local time = self:getTimestamp()
+
 	local ms = (time - packet.timestamp)
 
 	local n = self.ping.tcp_packets + 1
@@ -808,8 +816,6 @@ function client:onServerSync(packet)
 	self.me = self.users[self.session]
 	self.num_users = self.num_users + 1
 	log.info("message: %s", packet.welcome_text:stripHTML())
-
-	self:pingTCP()
 
 	for session, user in pairs(self:getUsers()) do
 		user:requestStats(true)
@@ -882,7 +888,8 @@ function client:onUserState(packet)
 		evnt = event.new(self, packet, true)
 
 		if self.synced then
-			log.info("%s connected", user)
+			local channel = self.channels[packet.channel_id or 0]
+			log.info("%s connected to channel %s", user, channel)
 			self:hookCall("OnUserConnected", evnt)
 		end
 	else
@@ -971,19 +978,18 @@ function client:onCryptSetup(packet)
 	end
 
 	if packet.key and packet.client_nonce and packet.server_nonce then
-		--[[
-		const std::string &key = msg.key();
-		const std::string &client_nonce = msg.client_nonce();
-		const std::string &server_nonce = msg.server_nonce();
-		if (key.size() == AES_KEY_SIZE_BYTES && client_nonce.size() == AES_BLOCK_SIZE && server_nonce.size() == AES_BLOCK_SIZE)
-			c->csCrypt.setKey(reinterpret_cast<const unsigned char *>(key.data()), reinterpret_cast<const unsigned char *>(client_nonce.data()), reinterpret_cast<const unsigned char *>(server_nonce.data()));
-		]]
-		self.crypt:setKey(packet.key, packet.client_nonce, packet.server_nonce)
+		if not self.crypt:setKey(packet.key, packet.client_nonce, packet.server_nonce) then
+			log.warn("CryptState: Cipher resync failed: Invalid key/nonce from the server")
+		end
 	elseif packet.server_nonce then
-		self.crypt:setDecryptIV(packet.server_nonce)
 		self.ping.resync = self.ping.resync + 1
+		if not self.crypt:setDecryptIV(packet.server_nonce) then
+			log.warn("CryptState: Cipher resync failed: Invalid nonce from the server")
+		end
 	else
-
+		local mpcs = packet.new("CryptSetup")
+		mpcs:set("set_client_nonce", self.crypt:getEncryptIV())
+		self:sendTCP(mpcs)
 	end
 
 	if self.crypt:isValid() then

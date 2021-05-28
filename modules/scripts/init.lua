@@ -263,7 +263,6 @@ end)
 lua.install(client)
 afk.install(client)
 
-
 client:addCommand("replay", function(client, user, cmd, args, raw)
 	local f = io.open(("audio/replay/%s.rec"):format(user:getHash()), "rb")
 	if not f then return end

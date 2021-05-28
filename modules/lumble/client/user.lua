@@ -9,6 +9,12 @@ local config = require("config")
 local buffer = require("buffer")
 local log = require("log")
 
+local ffi = require("ffi")
+
+ffi.cdef[[
+const char *inet_ntop(int af, const void *restrict src, char *restrict dst, uint32_t size);
+]]
+
 function user.new(client, packet)
 	local user = setmetatable({
 		client = client,
@@ -35,6 +41,9 @@ function user:__tostring()
 	return ("\27[1;32m%s\27[0m"):format(self.name)
 end
 
+local AF_INET6 = 10
+local INET6_ADDRSTRLEN = 46
+
 function user:updateStats(packet)
 	for desc, value in packet:list() do
 		if desc.name == "address" then
@@ -44,7 +53,7 @@ function user:updateStats(packet)
 			self.stats[desc.name].data = value
 
 			local address
-			local isipv4 = b:readInt() == 0 and b:readInt() == 0 and b:readShort() == 0
+			local isipv4 = b:readInt() == 0 and b:readInt() == 0 and b:readShort() == 0 and b:readShort() == 0xFFFF
 
 			if isipv4 and not self.stats[desc.name].ipv4 then
 				-- ipv4
@@ -52,13 +61,18 @@ function user:updateStats(packet)
 				self.stats[desc.name].ipv6 = false
 				self.stats[desc.name].ipv4 = true
 			elseif not isipv4 and not self.stats[desc.name].ipv6 then
-				-- ipv6
-				address = ("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x"):format(
-					b[1], b[2], b[3], b[4],
-					b[5], b[6], b[7], b[8],
-					b[9], b[10], b[11], b[12],
-					b[13], b[14], b[15], b[16]
-				)
+				local ipv6 = ffi.new("char[?]", INET6_ADDRSTRLEN)
+				if (ffi.C.inet_ntop(AF_INET6, value, ipv6, ffi.sizeof(ipv6))) then
+					address = ffi.string(ipv6)
+				else
+					-- fallback
+					address = ("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x"):format(
+						b[1], b[2], b[3], b[4],
+						b[5], b[6], b[7], b[8],
+						b[9], b[10], b[11], b[12],
+						b[13], b[14], b[15], b[16]
+					)
+				end
 				self.stats[desc.name].ipv6 = true
 				self.stats[desc.name].ipv4 = false
 			end

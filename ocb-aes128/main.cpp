@@ -35,23 +35,54 @@ static int ocb_aes128_genKey(lua_State* L) {
 static int ocb_aes128_setKey(lua_State* L) {
 	CryptState* crypeState = *reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128));
 
-	const unsigned char* rkey = reinterpret_cast<const unsigned char *>(luaL_checkstring(L, 2));
-	const unsigned char* eiv = reinterpret_cast<const unsigned char *>(luaL_checkstring(L, 3));
-	const unsigned char* div = reinterpret_cast<const unsigned char *>(luaL_checkstring(L, 4));
+	std::string rkey(luaL_checkstring(L, 2));
+	std::string eiv(luaL_checkstring(L, 3));
+	std::string div(luaL_checkstring(L, 4));
 
-	crypeState->setKey(rkey, eiv, div);
-	return 0;
+	lua_pushboolean(L, crypeState->setKey(rkey, eiv, div));
+	return 1;
 }
 
-static int ocb_aes128_getKey(lua_State* L) {
-	lua_pushlstring(L, (const char*) (*reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128)))->getKey(), AES_KEY_SIZE_BYTES);
+static int ocb_aes128_setRawKey(lua_State* L) {
+	CryptState* crypeState = *reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128));
+	std::string raw_key(luaL_checkstring(L, 2));
+	lua_pushboolean(L, crypeState->setRawKey(raw_key));
+	return 1;
+}
+
+static int ocb_aes128_setEncryptIV(lua_State* L) {
+	CryptState* crypeState = *reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128));
+	std::string iv(luaL_checkstring(L, 2));
+	lua_pushboolean(L, crypeState->setEncryptIV(iv));
 	return 1;
 }
 
 static int ocb_aes128_setDecryptIV(lua_State* L) {
-	const unsigned char* iv = (const unsigned char*) luaL_checkstring(L, 2);
-	(*reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128)))->setDecryptIV(iv);
-	return 0;
+	CryptState* crypeState = *reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128));
+	std::string iv(luaL_checkstring(L, 2));
+	lua_pushboolean(L, crypeState->setDecryptIV(iv));
+	return 1;
+}
+
+static int ocb_aes128_getRawKey(lua_State* L) {
+	CryptState* crypeState = *reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128));
+	std::string raw_key = crypeState->getRawKey();
+	lua_pushlstring(L, (const char*) raw_key.c_str(), raw_key.length());
+	return 1;
+}
+
+static int ocb_aes128_getEncryptIV(lua_State* L) {
+	CryptState* crypeState = *reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128));
+	std::string encrypt_iv = crypeState->getEncryptIV();
+	lua_pushlstring(L, (const char*) encrypt_iv.c_str(), encrypt_iv.length());
+	return 1;
+}
+
+static int ocb_aes128_getDecryptIV(lua_State* L) {
+	CryptState* crypeState = *reinterpret_cast<CryptState**>(luaL_checkudata(L, 1, LUA_OCB_AES128));
+	std::string decrypt_iv = crypeState->getDecryptIV();
+	lua_pushlstring(L, (const char*) decrypt_iv.c_str(), decrypt_iv.length());
+	return 1;
 }
 
 static int ocb_aes128_getGood(lua_State* L) {
@@ -78,12 +109,17 @@ static int ocb_aes128_encrypt(lua_State* L) {
 	unsigned char* encrypted = new unsigned char[size + 4];
 	memset(encrypted, 0, size + 4);
 
-	crypeState->encrypt(plaintext, encrypted, size);
+	bool succ = crypeState->encrypt(plaintext, encrypted, size);
 
-	lua_pushlstring(L, (const char*) encrypted, size + 4);
+	lua_pushboolean(L, succ);
+
+	if (succ)
+		lua_pushlstring(L, (const char*) encrypted, size + 4);
+	else
+		lua_pushnil(L);
 
 	delete encrypted;
-	return 1;
+	return 2;
 }
 
 static int ocb_aes128_decrypt(lua_State* L){
@@ -118,8 +154,12 @@ const luaL_Reg ocb_aes128[] = {
 	{"isValid", ocb_aes128_isValid},
 	{"genKey", ocb_aes128_genKey},
 	{"setKey", ocb_aes128_setKey},
-	{"getKey", ocb_aes128_getKey},
+	{"setRawKey", ocb_aes128_setRawKey},
+	{"setEncryptIV", ocb_aes128_setEncryptIV},
 	{"setDecryptIV", ocb_aes128_setDecryptIV},
+	{"getRawKey", ocb_aes128_getRawKey},
+	{"getEncryptIV", ocb_aes128_getEncryptIV},
+	{"getDecryptIV", ocb_aes128_getDecryptIV},
 	{"getGood", ocb_aes128_getGood},
 	{"getLate", ocb_aes128_getLate},
 	{"getLost", ocb_aes128_getLost},
