@@ -213,7 +213,8 @@ function client:createAudioStream(bitspersec)
 	end
 
 	if bitrate ~= self.encoder:get("bitrate") then
-		log.debug("Server maximum network bandwidth is only %d kbit/s. Audio quality auto-adjusted to %d kbit/s (%d ms)", bitspersec / 1000, bitrate / 1000, frames * 10)
+		log.warn("Server maximum network bandwidth is only %d kbit/s.")
+		log.warn("Audio quality auto-adjusted to %d kbit/s (%d ms)", bitspersec / 1000, bitrate / 1000, frames * 10)
 		self.audio_frames = frames
 		self.encoder:set("bitrate", bitrate)
 		self.audio_buffer = ffi.new('float[?]', frames * SAMPLE_RATE * CHANNELS / 100)
