@@ -29,13 +29,12 @@ local ocbaes128 = require("ocb.aes128")
 
 require("extensions.string")
 
-local CHANNELS = 1
 local SAMPLE_RATE = 48000
 local ENCODED_BITRATE = 96000 --57000 --41100
 
 local DEFAULT_FRAMES = 1
 local MAX_FRAMES = 6
-local MAX_BUFFER_SIZE = MAX_FRAMES * SAMPLE_RATE * CHANNELS / 100
+local MAX_BUFFER_SIZE = MAX_FRAMES * SAMPLE_RATE / 100
 
 local UDP_CELT_ALPHA = 0
 local UDP_PING = 1
@@ -44,9 +43,6 @@ local UDP_CELT_BETA = 3
 local UDP_OPUS = 4
 
 local MAX_UDP_BUFFER = 1024
-
-local MAX_RECORD_SECONDS = 60
-local MAX_RECORD_FRAMES = SAMPLE_RATE * 1000 * MAX_RECORD_SECONDS / 1000
 
 local bor = bit.bor
 local band = bit.band
@@ -71,18 +67,13 @@ function client.new(host, port, params)
 	if not status then return false, err end
 	tcp:settimeout(0)
 
-	local encoder = opus.Encoder(SAMPLE_RATE, CHANNELS)
+	local encoder = opus.Encoder(SAMPLE_RATE, 2)
 	encoder:set("vbr", 0)
 	encoder:set("bitrate", 96000)
-
-	local decoder = opus.Decoder(SAMPLE_RATE, CHANNELS)
-	--decoder:set("vbr", 0)
-	--decoder:set("bitrate", 96000)
 
 	local object = {
 		crypt = ocbaes128.new(),
 		encoder = encoder,
-		decoder = decoder,
 		tcp = tcp,
 		udp = udp,
 		host = host,
@@ -125,8 +116,8 @@ function client.new(host, port, params)
 		audio_streams = {},
 		audio_volume = 0.35,
 		audio_frames = DEFAULT_FRAMES,
-		audio_buffer = ffi.new('float[?]', MAX_BUFFER_SIZE),
-		audio_debuffer = ffi.new('float[?]', MAX_BUFFER_SIZE),
+		audio_buffer = ffi.new('AudioFrame[?]', MAX_BUFFER_SIZE),
+		audio_debuffer = ffi.new('AudioFrame[?]', MAX_BUFFER_SIZE),
 		audio_sequence = 0,
 		audio_target = 0,
 	}
@@ -217,7 +208,7 @@ function client:createAudioStream(bitspersec)
 		log.warn("Audio quality auto-adjusted to %d kbit/s (%d ms)", bitspersec / 1000, bitrate / 1000, frames * 10)
 		self.audio_frames = frames
 		self.encoder:set("bitrate", bitrate)
-		self.audio_buffer = ffi.new('float[?]', frames * SAMPLE_RATE * CHANNELS / 100)
+		self.audio_buffer = ffi.new('AudioFrame[?]', frames * SAMPLE_RATE / 100)
 	end
 
 	-- Get the length of our timer for the audio stream..
@@ -454,7 +445,6 @@ function client:receiveVoiceData(packet, codec, target)
 	if oneframespeak or state_change and user.talking then
 		self:hookCall("OnUserStartSpeaking", user)
 		speakingEvent.last_packet = t
-		--user.recording = assert(io.open(("audio/replay/%s.rec"):format(user:getHash()), "ab"))
 	end
 
 	speakingEvent.codec = codec
@@ -470,29 +460,8 @@ function client:receiveVoiceData(packet, codec, target)
 
 	self:hookCall("OnUserSpeak", speakingEvent)
 
-	--[[if playbackf then
-		local decoded, decoded_len = self.decoder:decode(data, #data, MAX_BUFFER_SIZE)
-
-		for i=0,decoded_len-1 do
-			-- Mix all virtual audio channels together in the buffer
-			self.audio_debuffer[i] = self.audio_debuffer[i] + decoded[i]
-		end
-
-		local data = ffi.string(decoded, decoded_len*4)
-		--playbackf:write()
-	end]]
-
-	--[[if user.recording then
-		local decoded, decoded_len = self.decoder:decode(data, #data, MAX_BUFFER_SIZE)
-		local data = ffi.string(decoded, decoded_len*4)
-		user.recording:write(data) -- Save the entire data
-	end]]
-
 	if oneframespeak or state_change and not user.talking then
 		self:hookCall("OnUserStopSpeaking", user)
-		if user.recording then
-			user.recording:close()
-		end
 	end
 end
 
@@ -671,31 +640,6 @@ function client:streamAudio()
 	-- Reset the buffer to all 0's
 	ffi.fill(self.audio_buffer, ffi.sizeof(self.audio_buffer))
 
-	if self.recording_playback then
-		local pcm = self.recording_playback:read(self.audio_frames * 480 * 4)
-		if pcm and pcm ~= "" then
-			if #pcm/4 > biggest_pcm_size then
-				-- We need to save the biggest PCM data for later.
-				-- If we didn't do this, we could be cutting off some audio if one
-				-- stream ends while another is still playing.
-				biggest_pcm_size = #pcm/4
-			end
-
-			local i = 0
-			local int
-
-			for j=0,#pcm-1, 4 do
-				int = string.sub(pcm, j+1, j+4)
-				floatconversion.b = int
-				i = i + 1
-				self.audio_buffer[i] = self.audio_buffer[i] + floatconversion.f * self.audio_volume
-			end
-		else
-			self.recording_playback:close()
-			self.recording_playback = nil
-		end
-	end
-
 	-- Loop through each channel of audio and mix them together with simple addition.
 	for channel, stream in pairs(self.audio_streams) do
 		-- Get the PCM samples for our stream
@@ -716,7 +660,8 @@ function client:streamAudio()
 			end
 			for i=0,pcm_size-1 do
 				-- Mix all virtual audio channels together in the buffer
-				self.audio_buffer[i] = self.audio_buffer[i] + pcm[i] * self.audio_volume
+				self.audio_buffer[i].l = self.audio_buffer[i].l + pcm[i].l * self.audio_volume
+				self.audio_buffer[i].r = self.audio_buffer[i].r + pcm[i].l * self.audio_volume
 			end
 		end
 	end
@@ -1141,6 +1086,14 @@ function client:registerVoiceTarget(target_id, ...)
 		register:add("targets", targets)
 	end
 	self:sendTCP(register)
+end
+
+function client:createChannel(name, temporary)
+	local chan = packet.new("ChannelState")
+	chan:set("parent", 0)
+	chan:set("name", name)
+	chan:set("temporary", temporary)
+	self:sendTCP(chan)
 end
 
 local COMMAND = {}

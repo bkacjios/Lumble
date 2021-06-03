@@ -9,13 +9,18 @@ local sizeof = ffi.sizeof
 local STREAM = {}
 STREAM.__index = STREAM
 
-local CHANNELS = 1
+local CHANNELS = 2
 local SAMPLE_RATE = 48000
-local ENCODED_BITRATE = 96000 --57000 --41100
 
-local DEFAULT_FRAMES = 1
 local MAX_FRAMES = 6
 local MAX_BUFFER_SIZE = MAX_FRAMES * SAMPLE_RATE * CHANNELS / 100
+
+ffi.cdef[[
+typedef struct AudioFrame {
+	float l;
+	float r;
+} AudioFrame;
+]]
 
 local function AudioStream(path, volume, count)
 	local err = new('int[1]')
@@ -27,8 +32,8 @@ local function AudioStream(path, volume, count)
 		vorbis = vorbis,
 		samples = stb.stb_vorbis_stream_length_in_samples(vorbis),
 		info = stb.stb_vorbis_get_info(vorbis),
-		buffer = new('float[?]', MAX_BUFFER_SIZE),
-		rebuffer = new('float[?]', MAX_BUFFER_SIZE),
+		buffer = new('AudioFrame[?]', MAX_BUFFER_SIZE),
+		rebuffer = new('AudioFrame[?]', MAX_BUFFER_SIZE),
 		volume = volume or 1,
 		loop_count = count or 0,
 		talking_count = 0,
@@ -72,10 +77,10 @@ function STREAM:streamSamples(duration, sample_rate)
 	local source_rate = self.info.sample_rate
 	local sample_size = source_rate * duration / 1000
 
-	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, channels, self.buffer, sample_size * channels)
+	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 2, ffi.cast("float*", self.buffer), sample_size * 2)
 
 	-- Downmix to 1 channel
-	local j = 0
+	--[[local j = 0
 	for i=0,num_samples * channels, channels do
 		local total = 0
 		for c=0, channels-1 do
@@ -85,10 +90,15 @@ function STREAM:streamSamples(duration, sample_rate)
 		-- Average the channels out
 		self.rebuffer[j] = total / channels
 		j = j + 1
-	end
+	end]]
 
-	-- Copy mono audio back into our main buffer
-	copy(self.buffer, self.rebuffer, sizeof(self.rebuffer))
+	if channels == 1 and num_samples > 0 then
+		-- mix mono to stereo
+		for i=0, num_samples do
+			self.buffer[i].l = self.buffer[i].l / 2
+			self.buffer[i].r = self.buffer[i].l
+		end
+	end
 
 	if source_rate ~= sample_rate then
 		-- Clear the rebuffer so we can use it again
@@ -102,7 +112,9 @@ function STREAM:streamSamples(duration, sample_rate)
 
 		for t=0,num_samples/2 do
 			-- Resample the audio to fit within the requested sample_rate
-			self.rebuffer[t * 2] = self.buffer[floor(t / sample_rate * source_rate) * 2] * 2
+			local idx = floor(t / sample_rate * source_rate) * 2
+			self.rebuffer[t * 2].l = self.buffer[idx].l * 2
+			self.rebuffer[t * 2].r = self.buffer[idx].r * 2
 		end
 
 		-- Copy resampled audio back into the main buffer
@@ -137,7 +149,8 @@ function STREAM:streamSamples(duration, sample_rate)
 			self.duck_volume = self.duck_to_volume + (self.duck_from_volume - self.duck_to_volume) * duck_percent
 		end
 
-		self.buffer[i] = self.buffer[i] * self.volume * self.fade_volume * self.duck_volume
+		self.buffer[i].l = self.buffer[i].l * self.volume * self.fade_volume * self.duck_volume
+		self.buffer[i].r = self.buffer[i].r * self.volume * self.fade_volume * self.duck_volume
 		-- * 0.5 * (1+math.sin(2 * math.pi * 0.1 * socket.gettime()))
 	end
 

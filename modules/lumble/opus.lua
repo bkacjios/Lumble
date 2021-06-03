@@ -2,6 +2,7 @@ local ffi = require("ffi")
 local lib = ffi.load("opus")
 
 local gc, new, typeof = ffi.gc, ffi.new, ffi.typeof
+local cast = ffi.cast
 ffi.cdef[[
 typedef int16_t opus_int16;
 typedef int32_t opus_int32;
@@ -101,7 +102,7 @@ end
 
 function Encoder:encode(input, input_len, max_data_bytes)
 	local data = new("unsigned char[?]", max_data_bytes)
-	local ret = lib.opus_encode_float(self, input, input_len, data, max_data_bytes)
+	local ret = lib.opus_encode_float(self, cast("float*", input), input_len, data, max_data_bytes)
 	if ret < 0 then return throw(ret) end
 
 	return data, ret
