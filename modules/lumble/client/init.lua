@@ -661,7 +661,7 @@ function client:streamAudio()
 			for i=0,pcm_size-1 do
 				-- Mix all virtual audio channels together in the buffer
 				self.audio_buffer[i].l = self.audio_buffer[i].l + pcm[i].l * self.audio_volume
-				self.audio_buffer[i].r = self.audio_buffer[i].r + pcm[i].l * self.audio_volume
+				self.audio_buffer[i].r = self.audio_buffer[i].r + pcm[i].r * self.audio_volume
 			end
 		end
 	end
