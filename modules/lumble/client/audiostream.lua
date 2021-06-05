@@ -17,8 +17,7 @@ local MAX_BUFFER_SIZE = MAX_FRAMES * SAMPLE_RATE * CHANNELS / 100
 
 ffi.cdef[[
 typedef struct AudioFrame {
-	float l;
-	float r;
+	float l, r;
 } AudioFrame;
 ]]
 
@@ -71,6 +70,9 @@ end
 local ceil = math.ceil
 local floor = math.floor
 
+local m_time = 0
+local m_phase = 0
+
 function STREAM:streamSamples(duration, sample_rate)
 	local channels = self.info.channels
 	
@@ -79,17 +81,9 @@ function STREAM:streamSamples(duration, sample_rate)
 
 	local num_samples = stb.stb_vorbis_get_samples_float_interleaved(self.vorbis, 2, ffi.cast("float*", self.buffer), sample_size * 2)
 
-	-- Downmix to 1 channel
-	--[[local j = 0
-	for i=0,num_samples * channels, channels do
-		local total = 0
-		for c=0, channels-1 do
-			-- Add all the channels together
-			total = total + self.buffer[i + c]
-		end
-		-- Average the channels out
-		self.rebuffer[j] = total / channels
-		j = j + 1
+	--[[for i=0, num_samples do
+		self.buffer[i].r = 0.2 * math.sin(2 * (math.pi*2) * 500 * m_time + m_phase);
+		m_time = m_time + (1/48000)
 	end]]
 
 	if channels == 1 and num_samples > 0 then
@@ -131,6 +125,8 @@ function STREAM:streamSamples(duration, sample_rate)
 		self:seek("start")
 	end
 
+	local volume = 1
+
 	for i=0,num_samples-1 do
 		if self.fade_frames > 0 then
 			if self.fade_frames_left > 0 then
@@ -149,8 +145,10 @@ function STREAM:streamSamples(duration, sample_rate)
 			self.duck_volume = self.duck_to_volume + (self.duck_from_volume - self.duck_to_volume) * duck_percent
 		end
 
-		self.buffer[i].l = self.buffer[i].l * self.volume * self.fade_volume * self.duck_volume
-		self.buffer[i].r = self.buffer[i].r * self.volume * self.fade_volume * self.duck_volume
+		volume = self.volume * self.fade_volume * self.duck_volume
+
+		self.buffer[i].l = self.buffer[i].l * volume
+		self.buffer[i].r = self.buffer[i].r * volume
 		-- * 0.5 * (1+math.sin(2 * math.pi * 0.1 * socket.gettime()))
 	end
 

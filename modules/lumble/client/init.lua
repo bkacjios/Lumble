@@ -90,7 +90,7 @@ function client.new(host, port, params)
 			tcp_ping_avg = 0,
 			tcp_ping_var = 0,
 		},
-		tunnel_udp = true,
+		tunnel_udp = true, -- Use TCP for audio until the server confirms a successful UDP connection
 		version = {},
 		channels = {},
 		users = {},
@@ -160,6 +160,7 @@ function client:close()
 	self.onreadtcp:stop(ev.Loop.default)
 	self.onreadudp:stop(ev.Loop.default)
 	self.ping_timer:stop(ev.Loop.default)
+	
 	if self.audio_timer then
 		self.audio_timer:stop(ev.Loop.default)
 	end
@@ -474,6 +475,11 @@ function client:doping()
 		return false
 	end
 
+	if self.ping.udp_ping_acc >= 3 and not self.tunnel_udp then
+		log.warn("Server no longer responding to UDP pings, falling back to TCP..")
+		self.tunnel_udp = true
+	end
+
 	-- Only ping if we are fully synced with the server
 	if self.synced then
 		self:pingTCP()
@@ -504,7 +510,7 @@ function client:readudp()
 				self.ping.udp_packets = n
 				self.ping.udp_ping_avg = self.ping.udp_ping_avg * (n-1)/n + ms/n
 				self.ping.udp_ping_var = math.abs(ms - self.ping.udp_ping_avg) ^ 2
-				self.ping.udp_ping_acc = self.ping.udp_ping_acc - 1
+				self.ping.udp_ping_acc = 0
 
 				-- We have a UDP connection, do not tunnel through UDP
 				self.tunnel_udp = false
@@ -739,7 +745,7 @@ function client:onPing(packet)
 	self.ping.tcp_packets = n
 	self.ping.tcp_ping_avg = self.ping.tcp_ping_avg * (n-1)/n + ms/n
 	self.ping.tcp_ping_var = math.abs(ms - self.ping.tcp_ping_avg) ^ 2
-	self.ping.tcp_ping_acc = self.ping.tcp_ping_acc - 1
+	self.ping.tcp_ping_acc = 0
 
 	log.trace("Ping TCP: %0.2f ms", ms)
 

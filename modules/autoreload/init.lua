@@ -19,7 +19,7 @@ function autoreload.poll()
 				local crc = f:crc32()
 				f:close()
 
-				if info.crc ~= crc then
+				if crc ~= 0 and info.crc ~= crc then
 					local status, err = reload.reload(module)
 					if status then
 						info.crc = crc

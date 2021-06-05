@@ -28,7 +28,7 @@ end, 0, ev.READ):start(ev.Loop.default)
 ev.Timer.new(function()
 	autoreload.poll()
 	mumble.update()
-end, 1, 1):start(ev.Loop.default)
+end, 5, 5):start(ev.Loop.default)
 
 ev.Loop.default:loop()
 
