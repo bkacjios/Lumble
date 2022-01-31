@@ -22,6 +22,11 @@ local ffi = require("ffi")
 local ev = require("ev")
 
 local socket = require("socket")
+local libunix = require("socket.unix")
+
+local SOCKET = "/tmp/audio.sock"
+
+os.remove(SOCKET)
 
 local stream = require("lumble.client.audiostream")
 
@@ -32,9 +37,9 @@ require("extensions.string")
 local SAMPLE_RATE = 48000
 local ENCODED_BITRATE = 96000 --57000 --41100
 
-local DEFAULT_FRAMES = 1
+local DEFAULT_FRAMES = 2
 local MAX_FRAMES = 6
-local MAX_BUFFER_SIZE = MAX_FRAMES * SAMPLE_RATE / 100
+local MAX_BUFFER_SIZE = MAX_FRAMES * 2 * SAMPLE_RATE / 100
 
 local UDP_CELT_ALPHA = 0
 local UDP_PING = 1
@@ -71,9 +76,16 @@ function client.new(host, port, params)
 	encoder:set("vbr", 0)
 	encoder:set("bitrate", 96000)
 
+	local audioserver = socket.udp()
+	audioserver:settimeout(0)
+	audioserver:setsockname("127.0.0.1", 1337)
+
+	-- youtube-dl -f 251 https://www.youtube.com/watch?v=WNeLUngb-Xg -o - | ffmpeg -re -i - -f f32le -acodec pcm_f32le -ac 2 udp://127.0.0.1:1337?pkt_size=1920
+
 	local object = {
 		crypt = ocbaes128.new(),
 		encoder = encoder,
+		audioserver = audioserver,
 		tcp = tcp,
 		udp = udp,
 		host = host,
@@ -113,6 +125,8 @@ function client.new(host, port, params)
 		hooks = {},
 		commands = {},
 		start = socket.gettime(),
+		ping_time_udp = socket.gettime(),
+		ping_time_tcp = socket.gettime(),
 		audio_streams = {},
 		audio_volume = 0.35,
 		audio_frames = DEFAULT_FRAMES,
@@ -136,14 +150,22 @@ function client.new(host, port, params)
 		if not succ then log.error(err) end
 	end, udp:getfd(), ev.READ)
 
+	-- Create an event using the sockets file desciptor for when client is ready to read data
+	--[[object.onreadunix = ev.IO.new(function()
+		-- Read the request safely using xpcall
+		local succ, err = xpcall(object.readunix, debug.traceback, object)
+		if not succ then log.error(err) end
+	end, audioserver:getfd(), ev.READ)]]
+
 	object.ping_timer = ev.Timer.new(function()
 		local succ, err = xpcall(object.doping, debug.traceback, object)
 		if not succ then log.error(err) end
-	end, 30, 30)
+	end, 5, 5)
 
 	-- Register the event
 	object.onreadtcp:start(ev.Loop.default)
 	object.onreadudp:start(ev.Loop.default)
+	--object.onreadunix:start(ev.Loop.default)
 	object.ping_timer:start(ev.Loop.default)
 
 	return setmetatable(object, client)
@@ -329,10 +351,12 @@ function client:sendTCP(packet)
 end
 
 function client:sendUDP(packet)
-	local succ, encrypted = self.crypt:encrypt(packet:toString())
-	if succ then
-		log.trace("Send encrypted UDP %s to server", packet)
-		return self.udp:send(encrypted)
+	if self.crypt:isValid() then
+		local succ, encrypted = self.crypt:encrypt(packet:toString())
+		if succ then
+			log.trace("Send encrypted UDP %s to server", packet)
+			return self.udp:send(encrypted)
+		end
 	end
 end
 
@@ -350,14 +374,12 @@ function client:getTime()
 	return socket.gettime() - self.start
 end
 
-function client:getTimestamp()
-	return math.floor(self:getTime() * 1000)
-end
-
 function client:pingTCP()
 	local ping = packet.new("Ping")
 
-	ping:set("timestamp", self:getTimestamp())
+	self.ping_time_tcp = self:getTime()
+
+	ping:set("timestamp", self.ping_time_tcp)
 	ping:set("tcp_packets", self.ping.tcp_packets)
 	ping:set("tcp_ping_avg", self.ping.tcp_ping_avg)
 	ping:set("tcp_ping_var", self.ping.tcp_ping_avg)
@@ -377,9 +399,12 @@ function client:pingTCP()
 end
 
 function client:pingUDP()
+	self.ping_time_udp = self:getTime()
+
 	local b = buffer()
 	b:writeByte(lshift(UDP_PING, 5))
-	b:writeMumbleVarInt(self:getTimestamp())
+	b:writeFloat(self.ping_time_udp)
+
 	self:sendUDP(b)
 	self.ping.udp_ping_acc = self.ping.udp_ping_acc + 1
 end
@@ -489,10 +514,36 @@ function client:doping()
 	return true
 end
 
+function client:getPing()
+	return (self.ping.udp_ping_avg + self.ping.tcp_ping_avg) / 2
+end
+
+local t = socket.gettime()
+
+function client:readunix()
+	--[[local data, msg_or_ip, port_or_nil = self.audioserver:receivefrom()
+
+	local n = socket.gettime()
+	print(n - t)
+	t = n
+
+	print(msg_or_ip, port_or_nil)
+	if data then
+		print("READ", #data)
+		--print(string.format("%q", data))
+	elseif err == "wantread" then
+	elseif err == "wantwrite" then
+	elseif err == "timeout" then
+	else
+		log.error("UDP connection error %q", err)
+		--self:close()
+	end]]
+end
+
 function client:readudp()
 	local read, err = self.udp:receive(MAX_UDP_BUFFER)
 
-	if read then
+	if read and self.crypt:isValid() then
 		local success, decrypted = self.crypt:decrypt(read)
 
 		if success then
@@ -502,9 +553,9 @@ function client:readudp()
 			local id = rshift(header, 5)
 
 			if id == UDP_PING then
-				local timestamp = b:readMumbleVarInt()
-				local time = self:getTimestamp()
-				local ms = (time - timestamp)
+				local time = self:getTime()
+				local timestamp = b:readFloat()
+				local ms = (time - timestamp) * 1000
 
 				local n = self.ping.udp_packets + 1
 				self.ping.udp_packets = n
@@ -645,12 +696,33 @@ function client:streamAudio()
 
 	-- Reset the buffer to all 0's
 	ffi.fill(self.audio_buffer, ffi.sizeof(self.audio_buffer))
+	ffi.fill(self.audio_debuffer, ffi.sizeof(self.audio_debuffer))
+
+	local data, msg_or_ip, port_or_nil = self.audioserver:receivefrom(1920*4)
+	if data then
+		ffi.copy(self.audio_debuffer, data, #data)
+
+		local pcm_size = #data / 2
+
+		if pcm_size > biggest_pcm_size then
+			-- We need to save the biggest PCM data for later.
+			-- If we didn't do this, we could be cutting off some audio if one
+			-- stream ends while another is still playing.
+			biggest_pcm_size = pcm_size
+		end
+
+		for i=0,pcm_size-1 do
+			-- Mix all virtual audio channels together in the buffer
+			self.audio_buffer[i].l = self.audio_buffer[i].l + self.audio_debuffer[i].l * self.audio_volume * 0.25
+			self.audio_buffer[i].r = self.audio_buffer[i].r + self.audio_debuffer[i].r * self.audio_volume * 0.25
+		end
+	end
 
 	-- Loop through each channel of audio and mix them together with simple addition.
 	for channel, stream in pairs(self.audio_streams) do
 		-- Get the PCM samples for our stream
 
-		-- Get PCM data for a x * 10ms chunk
+		-- Get PCM data for a x amount of chunks in miliseconds
 		local pcm, pcm_size = stream:streamSamples(self.audio_frames * 10, SAMPLE_RATE)
 
 		if not pcm or not pcm_size or pcm_size <= 0 then
@@ -737,9 +809,8 @@ function client:onAuthenticate(packet)
 end
 
 function client:onPing(packet)
-	local time = self:getTimestamp()
-
-	local ms = (time - packet.timestamp)
+	local time = self:getTime()
+	local ms = (time - self.ping_time_tcp) * 1000
 
 	local n = self.ping.tcp_packets + 1
 	self.ping.tcp_packets = n

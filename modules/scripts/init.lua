@@ -97,10 +97,6 @@ client:hook("OnUserStopSpeaking", function(client, user)
 	--print("Delay: ", user.speech_delay_highest)
 end)
 
-local start = -math.pi/2
-local inc = math.pi/5
-local pos = start
-
 local channelsounds = {
 	[3] = "audio/soundboard/dotes.ogg", -- Dota2
 	[4] = "audio/soundboard/midas.ogg", -- CIV VI
@@ -109,11 +105,18 @@ local channelsounds = {
 	[40] = "audio/soundboard/boom.ogg", -- BOOM TETRIS
 	[41] = "audio/soundboard/n64.ogg", -- Nintenies
 	[47] = "audio/soundboard/hands.ogg", -- Deepthroat Galactic
-	[48] = "audio/soundboard/pooters.ogg", -- Cum
+	[48] = "audio/soundboard/cum.ogg", -- Cum
 	[49] = { -- With You
 		"audio/withyou_short-1.ogg",
 		"audio/withyou_short-2.ogg",
 	},
+	[50] = { -- War Thunder
+		"audio/soundboard/planecrash.ogg",
+		"audio/soundboard/advancedtechnology.ogg",
+	},
+	[6] = "audio/soundboard/orangetagn.ogg", -- OT's Anti-F SafeSpace
+	[51] = "audio/soundboard/heyyeyeh.ogg", -- HEYYEYAAEYAAAEYAEYAA
+	[52] = "audio/soundboard/rexxar.ogg", -- Cards duel.ogg
 }
 
 local function handleChannelSounds(client, event)
@@ -172,7 +175,7 @@ local function findMostPopularChannel()
 	local party = client.me:getChannel()
 
 	local root = client:getChannel()
-	local afkchannel = client:getChannel(config.afk.channel[root:getName()] or "AFK")
+	local afkchannel = client:getChannel(2) -- config.afk.channel[root:getName()] or "AFK"
 
 	if not afkchannel then return end
 
@@ -214,7 +217,7 @@ client:hook("OnUserState", "Muted - AFK", function(client, event)
 
 	local user = event.user
 	local root = client:getChannelRoot():getName()
-	local afk = client:getChannel(config.afk.channel[root] or "AFK")
+	local afk = client:getChannel(2) -- config.afk.channel[root:getName()] or "AFK"
 
 	if user:getName():lower() == "davey" then
 		afk = client:getChannel("Davis Speaks to the Preacher")
@@ -263,6 +266,15 @@ end)
 lua.install(client)
 afk.install(client)
 
+client:addCommand("youtube", function(client, user, cmd, args, raw)
+	os.execute("cat ./youtube.pid | xargs kill -9")
+	os.execute(string.format("./youtube.sh %s", args[1]))
+end)
+
+client:addCommand("stop", function(client, user, cmd, args, raw)
+	os.execute("cat ./youtube.pid | xargs kill -9")
+end)
+
 client:addCommand("replay", function(client, user, cmd, args, raw)
 	local f = io.open(("audio/replay/%s.rec"):format(user:getHash()), "rb")
 	if not f then return end
@@ -274,6 +286,7 @@ client:addCommand("replay", function(client, user, cmd, args, raw)
 end)
 
 client:addCommand("summon", function(client, user, cmd, args, raw)
+	print(client, user, client.me, user:getChannel())
 	client.me:move(user:getChannel())
 end):setHelp("Bring me to your channel")
 

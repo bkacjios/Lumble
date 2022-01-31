@@ -49,6 +49,21 @@ local function longestName(users)
 	return longest
 end
 
+concommand.Add("ping", function(cmd, args)
+	for host, clients in pairs(mumble.clients) do
+		for port, client in pairs(clients) do
+			print(("%s:%d"):format(host, port))
+			print(("\tname  : %s"):format(client:getChannel()))
+			print("TCP Stats")
+			print(("\tpackets : %d"):format(client.ping.tcp_packets))
+			print(("\tping    : %.02f"):format(client.ping.tcp_ping_avg))
+			print("UDP Stats")
+			print(("\tpackets : %d"):format(client.ping.udp_packets))
+			print(("\tping    : %.02f"):format(client.ping.udp_ping_avg))
+		end
+	end
+end)
+
 concommand.Add("status", function(cmd, args)
 	for host, clients in pairs(mumble.clients) do
 		for port, client in pairs(clients) do

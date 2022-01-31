@@ -106,8 +106,7 @@ static int ocb_aes128_encrypt(lua_State* L) {
 	size_t size;
 	const unsigned char* plaintext = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &size));
 
-	unsigned char* encrypted = new unsigned char[size + 4];
-	memset(encrypted, 0, size + 4);
+	unsigned char encrypted[size + 4];
 
 	bool succ = crypeState->encrypt(plaintext, encrypted, size);
 
@@ -118,7 +117,6 @@ static int ocb_aes128_encrypt(lua_State* L) {
 	else
 		lua_pushnil(L);
 
-	delete encrypted;
 	return 2;
 }
 
@@ -128,8 +126,7 @@ static int ocb_aes128_decrypt(lua_State* L){
 	size_t size;
 	const unsigned char* encrypted = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &size));
 
-	unsigned char* plaintext = new unsigned char[size - 4];
-	memset(plaintext, 0, size - 4);
+	unsigned char* plaintext[size];
 
 	bool succ = crypeState->decrypt(encrypted, plaintext, size);
 
@@ -140,7 +137,6 @@ static int ocb_aes128_decrypt(lua_State* L){
 	else
 		lua_pushnil(L);
 
-	delete plaintext;
 	return 2;
 }
 
